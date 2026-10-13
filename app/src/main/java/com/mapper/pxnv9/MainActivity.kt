@@ -86,7 +86,7 @@ class MainActivity : AppCompatActivity() {
 
             val tvDetected = android.widget.TextView(this@MainActivity).apply {
                 text = "Menunggu input hardware..."
-                textSize = 15sp
+                textSize = 15f
                 setTextColor(android.graphics.Color.parseColor("#00E676"))
                 setPadding(0, 8, 0, 16)
             }
