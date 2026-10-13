@@ -254,11 +254,15 @@ class OverlayService : Service() {
         }
 
         for (widget in MappingManager.activeWidgets) {
+            // Pedal kopling adalah virtual interlock hardware (tidak ada tombol di BUSSID untuk disentuh),
+            // jadi tidak perlu memunculkan kotak di layar sentuh game agar layar bersih.
+            if (widget.id == "pedal_clutch") continue
+
             when (widget.type) {
                 MappingType.STEERING_WHEEL -> container.addView(createSteeringHollowView(widget))
                 MappingType.SHIFTER_SLIDER -> {
-                    // Tampilkan kotak utama shifter (titik netral)
-                    container.addView(createStandardWidgetView(widget))
+                    // Tampilkan pin bulat [N] (Titik Pusat Netral) yang serasi dengan pin gigi
+                    container.addView(createShifterNeutralPinView(widget))
                     // Tampilkan pin individual untuk masing-masing gigi (R, 1, 2, 3, 4, 5, 6)
                     for ((gearName, slotPoint) in widget.shifterSlots) {
                         container.addView(createShifterSlotPinView(widget, gearName, slotPoint))
@@ -307,6 +311,75 @@ class OverlayService : Service() {
 
         attachDragAndClickListener(container, widget, size, size)
         return container
+    }
+
+    /**
+     * Pin Pusat Netral [N] H-Shifter
+     * Menggantikan kotak ungu besar agar tampilan rapi, bersih, dan konsisten dengan pin gigi (1-6, R).
+     * Klik untuk membuka pengaturan H-Shifter (Kopling, Linearity, dll).
+     */
+    @SuppressLint("ClickableViewAccessibility")
+    private fun createShifterNeutralPinView(widget: MappingWidget): View {
+        val pinSize = 72
+        val pin = TextView(this).apply {
+            text = "N"
+            textSize = 15f
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.parseColor("#E62E7D32")) // Hijau Netral
+                setStroke(3, Color.WHITE)
+            }
+        }
+
+        val lp = FrameLayout.LayoutParams(pinSize, pinSize).apply {
+            leftMargin = (widget.centerPoint.x - pinSize / 2).toInt()
+            topMargin = (widget.centerPoint.y - pinSize / 2).toInt()
+        }
+        pin.layoutParams = lp
+
+        var startLeft = 0
+        var startTop = 0
+        var downX = 0f
+        var downY = 0f
+
+        pin.setOnTouchListener { v, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    startLeft = (v.layoutParams as FrameLayout.LayoutParams).leftMargin
+                    startTop = (v.layoutParams as FrameLayout.LayoutParams).topMargin
+                    downX = event.rawX
+                    downY = event.rawY
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val deltaX = (event.rawX - downX).toInt()
+                    val deltaY = (event.rawY - downY).toInt()
+                    val newLeft = startLeft + deltaX
+                    val newTop = startTop + deltaY
+                    val p = v.layoutParams as FrameLayout.LayoutParams
+                    p.leftMargin = newLeft
+                    p.topMargin = newTop
+                    v.layoutParams = p
+
+                    widget.centerPoint.x = (newLeft + pinSize / 2).toFloat()
+                    widget.centerPoint.y = (newTop + pinSize / 2).toFloat()
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    if (kotlin.math.abs(event.rawX - downX) < 15 && kotlin.math.abs(event.rawY - downY) < 15) {
+                        showWidgetOptionDialog(widget)
+                    } else {
+                        Toast.makeText(this@OverlayService, "Posisi Netral [N] Disimpan!", Toast.LENGTH_SHORT).show()
+                    }
+                    true
+                }
+                else -> false
+            }
+        }
+
+        return pin
     }
 
     /**
