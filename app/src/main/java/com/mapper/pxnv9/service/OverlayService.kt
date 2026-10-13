@@ -91,7 +91,20 @@ class OverlayService : Service() {
             setTextColor(Color.WHITE)
             textSize = 14f
         }
-        pillLayout.addView(tvTitle)
+        val tvLiveHud = TextView(this).apply {
+            text = " [0° | N]"
+            setTextColor(Color.YELLOW)
+            textSize = 13f
+        }
+        pillLayout.addView(tvLiveHud)
+
+        // Observer untuk update HUD live
+        MappingManager.onSteeringAngleChanged = { deg, _ ->
+            tvLiveHud.text = " [${deg.toInt()}° | ${MappingManager.currentGear}]"
+        }
+        MappingManager.onGearChanged = { gear ->
+            tvLiveHud.text = " [${gear}]"
+        }
 
         var startX = 0
         var startY = 0
@@ -124,7 +137,7 @@ class OverlayService : Service() {
         }
 
         pillLayout.setOnGenericMotionListener { _, event ->
-            MappingManager.processMotionEvent(event)
+            MappingManager.processMotionEvent(event, this@OverlayService)
         }
 
         floatButtonView = pillLayout
@@ -175,7 +188,15 @@ class OverlayService : Service() {
                     }
                 })
 
-                // 2. Sensitivitas & Setir
+                // 2. Profil Game
+                addView(Button(this@OverlayService).apply {
+                    text = "📁 Profil (${MappingManager.currentProfileName})"
+                    setOnClickListener {
+                        showProfileSelectionDialog()
+                    }
+                })
+
+                // 3. Sensitivitas & Setir
                 addView(Button(this@OverlayService).apply {
                     text = "⚙️ Sensitivitas"
                     setOnClickListener {
@@ -183,14 +204,14 @@ class OverlayService : Service() {
                     }
                 })
 
-                // 3. Simpan
+                // 4. Simpan
                 addView(Button(this@OverlayService).apply {
                     text = "💾 Simpan"
                     setBackgroundColor(Color.parseColor("#2E7D32"))
                     setTextColor(Color.WHITE)
                     setOnClickListener {
-                        MappingManager.saveCustomMapping(this@OverlayService)
-                        Toast.makeText(this@OverlayService, "Konfigurasi Berhasil Disimpan!", Toast.LENGTH_SHORT).show()
+                        MappingManager.saveCurrentProfile(this@OverlayService)
+                        Toast.makeText(this@OverlayService, "Profil ${MappingManager.currentProfileName} Disimpan!", Toast.LENGTH_SHORT).show()
                         closeEditorOverlay()
                     }
                 })
@@ -628,9 +649,67 @@ class OverlayService : Service() {
             .setTitle("Pengaturan Setir PXN V9")
             .setView(dialogView)
             .setPositiveButton("Terapkan") { d, _ ->
-                MappingManager.saveCustomMapping(this)
+                MappingManager.saveCurrentProfile(this)
                 d.dismiss()
             }
+            .create()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            dialog.window?.setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
+        } else {
+            @Suppress("DEPRECATION")
+            dialog.window?.setType(WindowManager.LayoutParams.TYPE_PHONE)
+        }
+        dialog.show()
+    }
+
+    private fun showProfileSelectionDialog() {
+        val profiles = MappingManager.getSavedProfileList(this).toTypedArray()
+        val items = profiles.toMutableList().apply { add("➕ Buat Profil Baru...") }.toTypedArray()
+
+        val builder = AlertDialog.Builder(this)
+            .setTitle("Pilih Profil Game")
+            .setItems(items) { _, which ->
+                if (which == items.size - 1) {
+                    // Buat Profil Baru
+                    showCreateNewProfileDialog()
+                } else {
+                    val selected = items[which]
+                    MappingManager.loadProfile(this, selected)
+                    Toast.makeText(this, "Profil Aktif: $selected", Toast.LENGTH_SHORT).show()
+                    editorOverlayView?.let { refreshWidgetViews(it) }
+                }
+            }
+
+        val dialog = builder.create()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            dialog.window?.setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
+        } else {
+            @Suppress("DEPRECATION")
+            dialog.window?.setType(WindowManager.LayoutParams.TYPE_PHONE)
+        }
+        dialog.show()
+    }
+
+    private fun showCreateNewProfileDialog() {
+        val input = android.widget.EditText(this).apply {
+            hint = "Contoh: Truckers of Europe, BUSSID Mod JB5"
+            setTextColor(Color.BLACK)
+        }
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Nama Profil Baru")
+            .setView(input)
+            .setPositiveButton("Buat & Simpan") { d, _ ->
+                val name = input.text.toString().trim()
+                if (name.isNotEmpty()) {
+                    MappingManager.saveCurrentProfile(this, name)
+                    Toast.makeText(this, "Profil '$name' dibuat!", Toast.LENGTH_SHORT).show()
+                    editorOverlayView?.let { refreshWidgetViews(it) }
+                }
+                d.dismiss()
+            }
+            .setNegativeButton("Batal") { d, _ -> d.dismiss() }
             .create()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

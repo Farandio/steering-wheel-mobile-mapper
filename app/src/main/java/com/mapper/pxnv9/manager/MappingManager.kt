@@ -1,7 +1,10 @@
 package com.mapper.pxnv9.manager
 
 import android.content.Context
-import android.content.SharedPreferences
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -13,8 +16,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Mengelola pemetaan widget, penangkapan hardware key saat listening,
- * penyimpanan kustom, serta logika setir & H-shifter BUSSID.
+ * Mengelola pemetaan widget, multi-profil game, penangkapan hardware key,
+ * getaran haptic feedback, live input tracking, dan mode ADB/Root fallback.
  */
 object MappingManager {
 
@@ -23,13 +26,24 @@ object MappingManager {
     // Callback saat user sedang mendengarkan tombol hardware di edit mode
     var keyListenCallback: ((keyCode: Int, keyName: String) -> Unit)? = null
 
+    // Live Input Observers untuk HUD
+    var onSteeringAngleChanged: ((degrees: Float, normalized: Float) -> Unit)? = null
+    var onGearChanged: ((gear: String) -> Unit)? = null
+
+    // Multi-profil Game
+    var currentProfileName: String = "BUSSID Default"
+    private const val PREFS_NAME = "pxn_v9_mapping_prefs"
+    private const val KEY_PROFILE_PREFIX = "profile_"
+    private const val KEY_PROFILE_LIST = "profile_names_list"
+    private const val KEY_ACTIVE_PROFILE = "active_profile_name"
+
+    // Shizuku / Root Injection Mode Flag
+    var useAdbZeroLatencyMode: Boolean = false
+
     private var lastSteeringNormVal = 0f
     private var isThrottlePressed = false
     private var isBrakePressed = false
-    private var currentGear: String = "N"
-
-    private const val PREFS_NAME = "pxn_v9_mapping_prefs"
-    private const val KEY_WIDGETS = "saved_widgets"
+    var currentGear: String = "N"
 
     init {
         setupDefaultBussidProfile()
@@ -70,7 +84,6 @@ object MappingManager {
         )
 
         // 3. H-Shifter (Kanan Tengah BUSSID)
-        // Posisi netral tengah BUSSID di antara gigi 3 dan 4
         val shifter = MappingWidget(
             id = "h_shifter",
             name = "H-Shifter 6-Speed",
@@ -79,7 +92,6 @@ object MappingManager {
             width = 320f,
             height = 240f
         )
-        // Slot gigi BUSSID (relatif terhadap layar Full HD 2400x1080)
         shifter.shifterSlots["R"] = PointF(2020f, 730f)
         shifter.shifterSlots["1"] = PointF(2100f, 570f)
         shifter.shifterSlots["2"] = PointF(2100f, 730f)
@@ -94,10 +106,11 @@ object MappingManager {
             MappingWidget(
                 id = "pedal_gas",
                 name = "Pedal Gas",
-                type = MappingType.PEDAL_CONTINUOUS,
+                type = MappingType.PEDAL_ANALOG,
                 centerPoint = PointF(2280f, 870f),
                 width = 140f,
                 height = 200f,
+                pedalTravelDistance = 160f,
                 boundAxis = MotionEvent.AXIS_GAS
             )
         )
@@ -106,10 +119,11 @@ object MappingManager {
             MappingWidget(
                 id = "pedal_brake",
                 name = "Pedal Rem",
-                type = MappingType.PEDAL_CONTINUOUS,
+                type = MappingType.PEDAL_ANALOG,
                 centerPoint = PointF(2050f, 890f),
                 width = 140f,
                 height = 180f,
+                pedalTravelDistance = 140f,
                 boundAxis = MotionEvent.AXIS_BRAKE
             )
         )
@@ -129,10 +143,40 @@ object MappingManager {
         )
     }
 
-    fun saveCustomMapping(context: Context) {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val jsonArray = JSONArray()
+    // =========================================================================
+    // FITUR 3: MULTI-PROFIL MANAGEMENT
+    // =========================================================================
 
+    fun getSavedProfileList(context: Context): List<String> {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val raw = prefs.getString(KEY_PROFILE_LIST, "[\"BUSSID Default\"]") ?: "[\"BUSSID Default\"]"
+        val list = mutableListOf<String>()
+        try {
+            val arr = JSONArray(raw)
+            for (i in 0 until arr.length()) {
+                list.add(arr.getString(i))
+            }
+        } catch (e: Exception) {
+            list.add("BUSSID Default")
+        }
+        return list
+    }
+
+    fun saveCurrentProfile(context: Context, profileName: String = currentProfileName) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        currentProfileName = profileName
+
+        // Update daftar profil
+        val list = getSavedProfileList(context).toMutableList()
+        if (!list.contains(profileName)) {
+            list.add(profileName)
+            val arr = JSONArray(list)
+            prefs.edit().putString(KEY_PROFILE_LIST, arr.toString()).apply()
+        }
+        prefs.edit().putString(KEY_ACTIVE_PROFILE, profileName).apply()
+
+        // Simpan data widget profil
+        val jsonArray = JSONArray()
         for (w in activeWidgets) {
             val obj = JSONObject().apply {
                 put("id", w.id)
@@ -145,6 +189,7 @@ object MappingManager {
                 put("steeringRadius", w.steeringRadius)
                 put("steeringDegrees", w.steeringDegrees)
                 put("steeringSensitivity", w.steeringSensitivity)
+                put("pedalTravelDistance", w.pedalTravelDistance)
                 put("deadzone", w.deadzone)
                 put("boundKeyCode", w.boundKeyCode)
                 put("boundKeyName", w.boundKeyName)
@@ -163,16 +208,21 @@ object MappingManager {
             jsonArray.put(obj)
         }
 
-        prefs.edit().putString(KEY_WIDGETS, jsonArray.toString()).apply()
+        prefs.edit().putString(KEY_PROFILE_PREFIX + profileName, jsonArray.toString()).apply()
     }
 
-    fun loadCustomMapping(context: Context) {
+    fun loadProfile(context: Context, profileName: String) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val jsonStr = prefs.getString(KEY_WIDGETS, null) ?: return
+        val jsonStr = prefs.getString(KEY_PROFILE_PREFIX + profileName, null)
+        if (jsonStr == null) {
+            setupDefaultBussidProfile()
+            return
+        }
 
         try {
             val jsonArray = JSONArray(jsonStr)
             activeWidgets.clear()
+            currentProfileName = profileName
             for (i in 0 until jsonArray.length()) {
                 val obj = jsonArray.getJSONObject(i)
                 val type = MappingType.valueOf(obj.getString("type"))
@@ -186,6 +236,7 @@ object MappingManager {
                     steeringRadius = obj.optDouble("steeringRadius", 180.0).toFloat(),
                     steeringDegrees = obj.optDouble("steeringDegrees", 900.0).toFloat(),
                     steeringSensitivity = obj.optDouble("steeringSensitivity", 1.0).toFloat(),
+                    pedalTravelDistance = obj.optDouble("pedalTravelDistance", 160.0).toFloat(),
                     deadzone = obj.optDouble("deadzone", 0.03).toFloat(),
                     boundKeyCode = obj.optInt("boundKeyCode", -1),
                     boundKeyName = obj.optString("boundKeyName", "None"),
@@ -212,7 +263,39 @@ object MappingManager {
         }
     }
 
-    fun processMotionEvent(event: MotionEvent): Boolean {
+    fun loadCustomMapping(context: Context) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val activeName = prefs.getString(KEY_ACTIVE_PROFILE, "BUSSID Default") ?: "BUSSID Default"
+        loadProfile(context, activeName)
+    }
+
+    // =========================================================================
+    // FITUR 5: HAPTIC FEEDBACK & FORCE FEEDBACK EMULATION
+    // =========================================================================
+
+    fun triggerHapticFeedback(context: Context, durationMs: Long = 40L) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val vibratorManager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
+                vibratorManager.defaultVibrator.vibrate(
+                    VibrationEffect.createOneShot(durationMs, VibrationEffect.DEFAULT_AMPLITUDE)
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    vibrator.vibrate(VibrationEffect.createOneShot(durationMs, VibrationEffect.DEFAULT_AMPLITUDE))
+                } else {
+                    @Suppress("DEPRECATION")
+                    vibrator.vibrate(durationMs)
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    fun processMotionEvent(event: MotionEvent, context: Context? = null): Boolean {
         val service = TouchAccessibilityService.instance ?: return false
 
         val source = event.source
@@ -222,7 +305,7 @@ object MappingManager {
             return false
         }
 
-        // Setir Kemudi Axis X (900 Derajat)
+        // 1. Setir Kemudi Axis X (900 Derajat)
         val steeringAxisVal = event.getAxisValue(MotionEvent.AXIS_X)
         val steeringWidget = activeWidgets.firstOrNull { it.type == MappingType.STEERING_WHEEL }
         if (steeringWidget != null) {
@@ -237,7 +320,17 @@ object MappingManager {
                     maxDegrees = steeringWidget.steeringDegrees,
                     sensitivity = steeringWidget.steeringSensitivity
                 )
+
+                // Haptic getaran saat setir mentok kiri/kanan (Lock-to-lock)
+                if (kotlin.math.abs(effectiveVal) >= 0.98f && kotlin.math.abs(lastSteeringNormVal) < 0.98f) {
+                    context?.let { triggerHapticFeedback(it, 60L) }
+                }
+
                 lastSteeringNormVal = effectiveVal
+
+                // Notifikasi HUD derajat setir live
+                val liveAngle = (effectiveVal * (steeringWidget.steeringDegrees / 2f))
+                onSteeringAngleChanged?.invoke(liveAngle, effectiveVal)
             }
         }
 
@@ -272,7 +365,7 @@ object MappingManager {
         return true
     }
 
-    fun processKeyEvent(event: KeyEvent): Boolean {
+    fun processKeyEvent(event: KeyEvent, context: Context? = null): Boolean {
         val keyCode = event.keyCode
         val action = event.action
 
@@ -294,6 +387,7 @@ object MappingManager {
         if (tapWidget != null) {
             if (action == KeyEvent.ACTION_DOWN) {
                 service.injectTap(tapWidget.centerPoint.x, tapWidget.centerPoint.y)
+                context?.let { triggerHapticFeedback(it, 35L) }
             }
             return true
         }
@@ -311,9 +405,10 @@ object MappingManager {
                     if (action == KeyEvent.ACTION_DOWN) {
                         val prevGear = currentGear
                         currentGear = targetGear
+                        onGearChanged?.invoke(targetGear)
+                        context?.let { triggerHapticFeedback(it, 50L) } // Haptic hentakan saat masuk gigi
 
                         if (prevGear == "N" || prevGear == targetGear) {
-                            // Dari Netral -> Masuk ke Gigi Target
                             service.injectShifterPath(
                                 startX = neutralX,
                                 startY = neutralY,
@@ -324,21 +419,16 @@ object MappingManager {
                                 durationMs = 60L
                             )
                         } else {
-                            // Pindah Langsung Antar Gigi (Contoh: Gigi 1 -> Gigi 3, Gigi 2 -> Gigi 5):
-                            // 1. Dari slot gigi sebelumnya -> Lorong tengah kolom sebelumnya
-                            // 2. Geser horizontal di koridor tengah -> Lorong kolom target
-                            // 3. Masuk vertikal -> Slot gigi target
                             val prevPos = shifterWidget.shifterSlots[prevGear]
                             if (prevPos != null) {
                                 val waypoints = listOf(
-                                    Pair(prevPos.x, prevPos.y),         // Mulai di gigi sebelumnya (misal Gigi 1)
-                                    Pair(prevPos.x, neutralY),           // Turun ke koridor tengah
-                                    Pair(targetPos.x, neutralY),         // Geser ke kolom target (misal kolom 3/4)
-                                    Pair(targetPos.x, targetPos.y)       // Masuk ke gigi target (misal Gigi 3)
+                                    Pair(prevPos.x, prevPos.y),
+                                    Pair(prevPos.x, neutralY),
+                                    Pair(targetPos.x, neutralY),
+                                    Pair(targetPos.x, targetPos.y)
                                 )
                                 service.injectMultiPointPath(waypoints, durationMs = 85L)
                             } else {
-                                // Fallback jika posisi lama tidak ada
                                 service.injectShifterPath(
                                     startX = neutralX,
                                     startY = neutralY,
@@ -351,8 +441,8 @@ object MappingManager {
                             }
                         }
                     } else if (action == KeyEvent.ACTION_UP && currentGear == targetGear) {
-                        // Kembali ke Netral (Tuas fisik dilepas ke N)
                         currentGear = "N"
+                        onGearChanged?.invoke("N")
                         service.injectShifterPath(
                             startX = targetPos.x,
                             startY = targetPos.y,
