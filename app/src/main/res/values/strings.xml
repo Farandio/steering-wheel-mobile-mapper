@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">PXN V9 Mapper</string>
+    <string name="accessibility_service_desc">Layanan untuk mensimulasikan gestur sentuhan (touch injection) dari input setir kemudi PXN V9 untuk game BUSSID.</string>
+</resources>
