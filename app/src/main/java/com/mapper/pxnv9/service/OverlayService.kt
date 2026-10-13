@@ -123,6 +123,10 @@ class OverlayService : Service() {
             }
         }
 
+        pillLayout.setOnGenericMotionListener { _, event ->
+            MappingManager.processMotionEvent(event)
+        }
+
         floatButtonView = pillLayout
         windowManager.addView(floatButtonView, floatParams)
     }
