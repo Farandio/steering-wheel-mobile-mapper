@@ -221,6 +221,18 @@ object MappingManager {
                     slotsObj.put(slotKey, slotPointObj)
                 }
                 put("shifterSlots", slotsObj)
+
+                val gearBindingsObj = JSONObject()
+                for ((gear, code) in w.gearKeyBindings) {
+                    gearBindingsObj.put(gear, code)
+                }
+                put("gearKeyBindings", gearBindingsObj)
+
+                val gearNamesObj = JSONObject()
+                for ((gear, name) in w.gearKeyNames) {
+                    gearNamesObj.put(gear, name)
+                }
+                put("gearKeyNames", gearNamesObj)
             }
             jsonArray.put(obj)
         }
@@ -273,6 +285,25 @@ object MappingManager {
                         )
                     }
                 }
+
+                val gearBindingsObj = obj.optJSONObject("gearKeyBindings")
+                if (gearBindingsObj != null) {
+                    val keys = gearBindingsObj.keys()
+                    while (keys.hasNext()) {
+                        val k = keys.next()
+                        widget.gearKeyBindings[k] = gearBindingsObj.getInt(k)
+                    }
+                }
+
+                val gearNamesObj = obj.optJSONObject("gearKeyNames")
+                if (gearNamesObj != null) {
+                    val keys = gearNamesObj.keys()
+                    while (keys.hasNext()) {
+                        val k = keys.next()
+                        widget.gearKeyNames[k] = gearNamesObj.getString(k)
+                    }
+                }
+
                 activeWidgets.add(widget)
             }
         } catch (e: Exception) {
@@ -566,6 +597,13 @@ object MappingManager {
     }
 
     fun mapKeyCodeToGear(keyCode: Int): String? {
+        val shifterWidget = activeWidgets.firstOrNull { it.type == MappingType.SHIFTER_SLIDER }
+        if (shifterWidget != null && shifterWidget.gearKeyBindings.isNotEmpty()) {
+            for ((gear, boundCode) in shifterWidget.gearKeyBindings) {
+                if (boundCode == keyCode) return gear
+            }
+        }
+
         return when (keyCode) {
             KeyEvent.KEYCODE_BUTTON_1 -> "1"
             KeyEvent.KEYCODE_BUTTON_2 -> "2"

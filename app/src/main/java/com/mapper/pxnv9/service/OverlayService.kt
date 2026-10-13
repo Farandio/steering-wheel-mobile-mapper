@@ -205,11 +205,19 @@ class OverlayService : Service() {
                     }
                 })
 
-                // 3. Sensitivitas & Setir
+                // 3. Sensitivitas Setir
                 addView(Button(this@OverlayService).apply {
-                    text = "⚙️ Sensitivitas"
+                    text = "⚙️ Setir"
                     setOnClickListener {
                         showSensitivityDialog()
+                    }
+                })
+
+                // 3b. Kalibrasi Pedal (Gas, Rem, Kopling)
+                addView(Button(this@OverlayService).apply {
+                    text = "🦶 Pedal & Kopling"
+                    setOnClickListener {
+                        showPedalCalibrationDialog()
                     }
                 })
 
@@ -435,7 +443,11 @@ class OverlayService : Service() {
                     true
                 }
                 MotionEvent.ACTION_UP -> {
-                    Toast.makeText(this@OverlayService, "Posisi Gigi $gearName diatur!", Toast.LENGTH_SHORT).show()
+                    if (kotlin.math.abs(event.rawX - downX) < 15 && kotlin.math.abs(event.rawY - downY) < 15) {
+                        showGearCalibrationDialog(widget, gearName)
+                    } else {
+                        Toast.makeText(this@OverlayService, "Posisi Gigi $gearName diatur!", Toast.LENGTH_SHORT).show()
+                    }
                     true
                 }
                 else -> false
@@ -443,6 +455,77 @@ class OverlayService : Service() {
         }
 
         return pin
+    }
+
+    /**
+     * Dialog Kalibrasi Manual Tombol Fisik untuk Tiap Gigi (1-6, R)
+     */
+    private fun showGearCalibrationDialog(shifterWidget: MappingWidget, gearName: String) {
+        val currentKey = shifterWidget.gearKeyNames[gearName] ?: "Default (Button $gearName)"
+
+        val dialogView = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(36, 24, 36, 24)
+            setBackgroundColor(Color.WHITE)
+
+            val tvTitle = TextView(this@OverlayService).apply {
+                text = "⚙️ Kalibrasi Tombol Gigi $gearName"
+                textSize = 16f
+                setTextColor(Color.BLACK)
+            }
+            addView(tvTitle)
+
+            val tvBound = TextView(this@OverlayService).apply {
+                text = "Tombol Terikat: $currentKey"
+                textSize = 14f
+                setTextColor(Color.DKGRAY)
+                setPadding(0, 16, 0, 12)
+            }
+            addView(tvBound)
+
+            val btnLearn = Button(this@OverlayService).apply {
+                text = "🎮 Tekan Tuas Gigi $gearName di Shifter..."
+                setOnClickListener {
+                    text = "⏳ Masukkan tuas ke Gigi $gearName pada shifter..."
+                    MappingManager.keyListenCallback = { keyCode, keyName ->
+                        shifterWidget.gearKeyBindings[gearName] = keyCode
+                        shifterWidget.gearKeyNames[gearName] = keyName
+                        tvBound.text = "Tombol Terikat: $keyName (KeyCode: $keyCode)"
+                        text = "✅ Berhasil Terikat: $keyName"
+                        Toast.makeText(this@OverlayService, "Gigi $gearName terikat ke $keyName", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            addView(btnLearn)
+
+            val btnReset = Button(this@OverlayService).apply {
+                text = "🔄 Reset ke Default PXN"
+                setOnClickListener {
+                    shifterWidget.gearKeyBindings.remove(gearName)
+                    shifterWidget.gearKeyNames.remove(gearName)
+                    tvBound.text = "Tombol Terikat: Default (Button $gearName)"
+                    Toast.makeText(this@OverlayService, "Gigi $gearName di-reset ke default", Toast.LENGTH_SHORT).show()
+                }
+            }
+            addView(btnReset)
+        }
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Kalibrasi Manual Shifter")
+            .setView(dialogView)
+            .setPositiveButton("Selesai") { d, _ ->
+                MappingManager.saveCurrentProfile(this)
+                d.dismiss()
+            }
+            .create()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            dialog.window?.setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
+        } else {
+            @Suppress("DEPRECATION")
+            dialog.window?.setType(WindowManager.LayoutParams.TYPE_PHONE)
+        }
+        dialog.show()
     }
 
     /**
@@ -841,6 +924,46 @@ class OverlayService : Service() {
                 })
             }
             addView(sbDz)
+
+            // 5. Kalibrasi Manual Axis Setir Kemudi
+            val tvSteerAxis = TextView(this@OverlayService).apply {
+                text = "Axis Kemudi: ${if (steeringWidget.boundAxis == -1) "AXIS_X (0) - Default" else "MotionEvent.AXIS_${steeringWidget.boundAxis}"}"
+                textSize = 14f
+                setTextColor(Color.DKGRAY)
+                setPadding(0, 20, 0, 8)
+            }
+            addView(tvSteerAxis)
+
+            val btnPickSteerAxis = Button(this@OverlayService).apply {
+                text = "⚙️ Pilih Axis Setir Kemudi"
+                setOnClickListener {
+                    val steerAxisOptions = arrayOf(
+                        "AXIS_X (0) - Default Setir PXN",
+                        "AXIS_Y (1) - Alternatif Setir",
+                        "AXIS_Z (11) - Alternatif Axis Z",
+                        "AXIS_RZ (14) - Alternatif Axis RZ"
+                    )
+                    val steerAxisValues = intArrayOf(
+                        android.view.MotionEvent.AXIS_X,
+                        android.view.MotionEvent.AXIS_Y,
+                        android.view.MotionEvent.AXIS_Z,
+                        android.view.MotionEvent.AXIS_RZ
+                    )
+                    AlertDialog.Builder(this@OverlayService)
+                        .setTitle("Pilih Axis Setir Kemudi")
+                        .setItems(steerAxisOptions) { _, idx ->
+                            steeringWidget.boundAxis = steerAxisValues[idx]
+                            tvSteerAxis.text = "Axis Kemudi: ${steerAxisOptions[idx]}"
+                            Toast.makeText(this@OverlayService, "Axis setir disimpan: ${steerAxisOptions[idx]}", Toast.LENGTH_SHORT).show()
+                        }
+                        .create().apply {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                window?.setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
+                            }
+                        }.show()
+                }
+            }
+            addView(btnPickSteerAxis)
         }
 
         val dialog = AlertDialog.Builder(this)
@@ -848,6 +971,133 @@ class OverlayService : Service() {
             .setView(dialogView)
             .setPositiveButton("Terapkan") { d, _ ->
                 MappingManager.saveCurrentProfile(this)
+                d.dismiss()
+            }
+            .create()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            dialog.window?.setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
+        } else {
+            @Suppress("DEPRECATION")
+            dialog.window?.setType(WindowManager.LayoutParams.TYPE_PHONE)
+        }
+        dialog.show()
+    }
+
+    /**
+     * Dialog Kalibrasi Manual Seluruh Pedal: Gas, Rem, dan Kopling
+     */
+    private fun showPedalCalibrationDialog() {
+        val gasWidget = MappingManager.activeWidgets.firstOrNull { it.id == "pedal_gas" }
+        val brakeWidget = MappingManager.activeWidgets.firstOrNull { it.id == "pedal_brake" }
+        val clutchWidget = MappingManager.activeWidgets.firstOrNull { it.id == "pedal_clutch" }
+
+        val dialogView = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(32, 20, 32, 20)
+            setBackgroundColor(Color.WHITE)
+
+            val tvTitle = TextView(this@OverlayService).apply {
+                text = "🦶 Kalibrasi Pedal (Gas, Rem, Kopling)"
+                textSize = 16f
+                setTextColor(Color.BLACK)
+            }
+            addView(tvTitle)
+
+            // 1. Pedal Gas
+            if (gasWidget != null) {
+                val tvGas = TextView(this@OverlayService).apply {
+                    text = "🟢 Pedal Gas Axis: ${if (gasWidget.boundAxis == -1) "AXIS_GAS (22) - Auto" else "MotionEvent.AXIS_${gasWidget.boundAxis}"}"
+                    textSize = 13f
+                    setTextColor(Color.DKGRAY)
+                    setPadding(0, 14, 0, 4)
+                }
+                addView(tvGas)
+
+                val btnGas = Button(this@OverlayService).apply {
+                    text = "⚙️ Pilih Axis Pedal Gas"
+                    setOnClickListener {
+                        val opts = arrayOf("Default Auto (AXIS_GAS / RTRIGGER)", "AXIS_GAS (22)", "AXIS_RTRIGGER (18)", "AXIS_Y (1)", "AXIS_RZ (14)")
+                        val vals = intArrayOf(-1, android.view.MotionEvent.AXIS_GAS, android.view.MotionEvent.AXIS_RTRIGGER, android.view.MotionEvent.AXIS_Y, android.view.MotionEvent.AXIS_RZ)
+                        AlertDialog.Builder(this@OverlayService)
+                            .setTitle("Pilih Axis Gas")
+                            .setItems(opts) { _, i ->
+                                gasWidget.boundAxis = vals[i]
+                                tvGas.text = "🟢 Pedal Gas Axis: ${opts[i]}"
+                                Toast.makeText(this@OverlayService, "Axis Gas disimpan!", Toast.LENGTH_SHORT).show()
+                            }.create().apply {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) window?.setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
+                            }.show()
+                    }
+                }
+                addView(btnGas)
+            }
+
+            // 2. Pedal Rem
+            if (brakeWidget != null) {
+                val tvBrake = TextView(this@OverlayService).apply {
+                    text = "🔴 Pedal Rem Axis: ${if (brakeWidget.boundAxis == -1) "AXIS_BRAKE (23) - Auto" else "MotionEvent.AXIS_${brakeWidget.boundAxis}"}"
+                    textSize = 13f
+                    setTextColor(Color.DKGRAY)
+                    setPadding(0, 14, 0, 4)
+                }
+                addView(tvBrake)
+
+                val btnBrake = Button(this@OverlayService).apply {
+                    text = "⚙️ Pilih Axis Pedal Rem"
+                    setOnClickListener {
+                        val opts = arrayOf("Default Auto (AXIS_BRAKE / LTRIGGER)", "AXIS_BRAKE (23)", "AXIS_LTRIGGER (17)", "AXIS_RZ (14)", "AXIS_Z (11)")
+                        val vals = intArrayOf(-1, android.view.MotionEvent.AXIS_BRAKE, android.view.MotionEvent.AXIS_LTRIGGER, android.view.MotionEvent.AXIS_RZ, android.view.MotionEvent.AXIS_Z)
+                        AlertDialog.Builder(this@OverlayService)
+                            .setTitle("Pilih Axis Rem")
+                            .setItems(opts) { _, i ->
+                                brakeWidget.boundAxis = vals[i]
+                                tvBrake.text = "🔴 Pedal Rem Axis: ${opts[i]}"
+                                Toast.makeText(this@OverlayService, "Axis Rem disimpan!", Toast.LENGTH_SHORT).show()
+                            }.create().apply {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) window?.setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
+                            }.show()
+                    }
+                }
+                addView(btnBrake)
+            }
+
+            // 3. Pedal Kopling
+            if (clutchWidget != null) {
+                val tvClutch = TextView(this@OverlayService).apply {
+                    text = "🔵 Pedal Kopling Axis: ${if (clutchWidget.boundAxis == -1) "AXIS_Y (1) - Default PXN" else "MotionEvent.AXIS_${clutchWidget.boundAxis}"}"
+                    textSize = 13f
+                    setTextColor(Color.DKGRAY)
+                    setPadding(0, 14, 0, 4)
+                }
+                addView(tvClutch)
+
+                val btnClutch = Button(this@OverlayService).apply {
+                    text = "⚙️ Pilih Axis Pedal Kopling"
+                    setOnClickListener {
+                        val opts = arrayOf("AXIS_Y (1) - Default Kopling PXN", "AXIS_Z (11) - Alternatif Kopling", "AXIS_RZ (14) - Alternatif Kopling", "AXIS_LTRIGGER (17)", "AXIS_RTRIGGER (18)")
+                        val vals = intArrayOf(android.view.MotionEvent.AXIS_Y, android.view.MotionEvent.AXIS_Z, android.view.MotionEvent.AXIS_RZ, android.view.MotionEvent.AXIS_LTRIGGER, android.view.MotionEvent.AXIS_RTRIGGER)
+                        AlertDialog.Builder(this@OverlayService)
+                            .setTitle("Pilih Axis Kopling")
+                            .setItems(opts) { _, i ->
+                                clutchWidget.boundAxis = vals[i]
+                                tvClutch.text = "🔵 Pedal Kopling Axis: ${opts[i]}"
+                                Toast.makeText(this@OverlayService, "Axis Kopling disimpan!", Toast.LENGTH_SHORT).show()
+                            }.create().apply {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) window?.setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
+                            }.show()
+                    }
+                }
+                addView(btnClutch)
+            }
+        }
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Kalibrasi Pedal & Kopling")
+            .setView(dialogView)
+            .setPositiveButton("Simpan") { d, _ ->
+                MappingManager.saveCurrentProfile(this)
+                Toast.makeText(this, "Kalibrasi Pedal disimpan!", Toast.LENGTH_SHORT).show()
                 d.dismiss()
             }
             .create()

@@ -23,6 +23,9 @@ data class MappingWidget(
     var height: Float = 120f,
     // Khusus Shifter: target koordinat posisi tiap gigi ("R", "1", "2", "3", "4", "5", "6")
     var shifterSlots: MutableMap<String, PointF> = mutableMapOf(),
+    // Binding manual tombol hardware untuk tiap gigi (misal "1" -> KEYCODE_BUTTON_1)
+    var gearKeyBindings: MutableMap<String, Int> = mutableMapOf(),
+    var gearKeyNames: MutableMap<String, String> = mutableMapOf(),
     // Khusus Steering Wheel:
     var steeringRadius: Float = 180f,     // Radius lingkaran setir virtual BUSSID
     var steeringDegrees: Float = 900f,    // 900 derajat atau 270 derajat
