@@ -54,7 +54,7 @@ class TouchAccessibilityService : AccessibilityService() {
     // =========================================================================
 
     /**
-     * 1. Single Tap (Klakson, Lampu, Hazard, dll)
+     * 1. Single Tap (Klakson, Lampu, Hazard, Pintu, Wiper, dll)
      */
     fun injectTap(x: Float, y: Float, durationMs: Long = 40L) {
         val path = Path().apply {
@@ -99,13 +99,7 @@ class TouchAccessibilityService : AccessibilityService() {
 
     /**
      * 3. Setir Rotasi 900 Derajat (Arc / Circular Drag)
-     * Pada BUSSID, kemudi virtual diputar dengan menyentuh tepi kemudi dan menggesernya secara melingkar (arc).
-     *
-     * @param centerX Pusat setir di layar
-     * @param centerY Pusat setir di layar
-     * @param radius Jari-jari lingkaran setir virtual
-     * @param currentNormAngle Sudut fisik setir saat ini (-1.0f s/d 1.0f)
-     * @param maxDegrees Derajat fisik setir (900f atau 270f)
+     * Titik sentuh berada pada lingkar luar setir virtual BUSSID, sehingga bagian tengah tetap bebas untuk klakson.
      */
     fun injectCircularSteering(
         centerX: Float,
@@ -116,8 +110,6 @@ class TouchAccessibilityService : AccessibilityService() {
         maxDegrees: Float,
         sensitivity: Float
     ) {
-        // Hitung sudut rotasi dalam radian (Setir berpusat di arah atas / 90 derajat atau 270)
-        // Setir 900 derajat = 2.5 putaran penuh (450 derajat ke kiri, 450 derajat ke kanan)
         val maxRotRadian = (maxDegrees / 2f) * (PI.toFloat() / 180f) * sensitivity
 
         val startAngle = -PI.toFloat() / 2f + (fromNorm * maxRotRadian)
@@ -134,14 +126,28 @@ class TouchAccessibilityService : AccessibilityService() {
             lineTo(endX, endY)
         }
 
-        val stroke = GestureDescription.StrokeDescription(path, 0, 30L)
+        val stroke = GestureDescription.StrokeDescription(path, 0, 25L)
         val gesture = GestureDescription.Builder().addStroke(stroke).build()
         dispatchGesture(gesture, null, null)
     }
 
     /**
-     * 4. H-Shifter Node Dragging (Tengah -> Slot Gigi atau sebaliknya)
+     * 4. H-Shifter BUSSID:
+     * Pada BUSSID H-Shifter, dari titik netral / tengah ke gigi (1, 2, 3, 4, 5, 6, R)
+     * memiliki lorong H (misal gigi 1 harus lewat atas lalu kiri).
+     * Jika midWayPoint diberikan, gesture mengikuti lintasan siku (L-shape / H-gate path).
      */
+    fun injectShifterPath(startX: Float, startY: Float, midX: Float, midY: Float, endX: Float, endY: Float, durationMs: Long = 70L) {
+        val path = Path().apply {
+            moveTo(startX, startY)
+            lineTo(midX, midY)
+            lineTo(endX, endY)
+        }
+        val stroke = GestureDescription.StrokeDescription(path, 0, durationMs)
+        val gesture = GestureDescription.Builder().addStroke(stroke).build()
+        dispatchGesture(gesture, null, null)
+    }
+
     fun injectShifterSlide(startX: Float, startY: Float, endX: Float, endY: Float, durationMs: Long = 50L) {
         val path = Path().apply {
             moveTo(startX, startY)

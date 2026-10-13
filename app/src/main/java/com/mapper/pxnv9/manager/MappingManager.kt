@@ -13,12 +13,15 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Mengelola pemetaan widget, penyimpanan preferensi (custom mapping),
- * sensitivitas, deadzone, dan kalkulasi rotasi 900 derajat.
+ * Mengelola pemetaan widget, penangkapan hardware key saat listening,
+ * penyimpanan kustom, serta logika setir & H-shifter BUSSID.
  */
 object MappingManager {
 
     val activeWidgets = mutableListOf<MappingWidget>()
+
+    // Callback saat user sedang mendengarkan tombol hardware di edit mode
+    var keyListenCallback: ((keyCode: Int, keyName: String) -> Unit)? = null
 
     private var lastSteeringNormVal = 0f
     private var isThrottlePressed = false
@@ -35,14 +38,16 @@ object MappingManager {
     fun setupDefaultBussidProfile() {
         activeWidgets.clear()
 
-        // 1. Steering Wheel 900 Derajat (Kiri Bawah BUSSID)
+        // 1. Steering Wheel 900 Derajat (Kiri Bawah BUSSID) - Lingkar luar
         activeWidgets.add(
             MappingWidget(
                 id = "wheel_steering",
                 name = "Setir Kemudi (900°)",
                 type = MappingType.STEERING_WHEEL,
-                centerPoint = PointF(400f, 750f),
-                steeringRadius = 180f,
+                centerPoint = PointF(360f, 820f),
+                width = 440f,
+                height = 440f,
+                steeringRadius = 190f,
                 steeringDegrees = 900f,
                 steeringSensitivity = 1.0f,
                 deadzone = 0.03f,
@@ -50,29 +55,49 @@ object MappingManager {
             )
         )
 
-        // 2. H-Shifter (Kanan Tengah BUSSID)
+        // 2. Klakson di Tengah Setir (Titik pusat setir BUSSID berlogo)
+        activeWidgets.add(
+            MappingWidget(
+                id = "btn_horn",
+                name = "Klakson (Tengah Setir)",
+                type = MappingType.TAP,
+                centerPoint = PointF(360f, 820f),
+                width = 120f,
+                height = 120f,
+                boundKeyCode = KeyEvent.KEYCODE_BUTTON_A,
+                boundKeyName = "Button A"
+            )
+        )
+
+        // 3. H-Shifter (Kanan Tengah BUSSID)
+        // Posisi netral tengah BUSSID di antara gigi 3 dan 4
         val shifter = MappingWidget(
             id = "h_shifter",
             name = "H-Shifter 6-Speed",
             type = MappingType.SHIFTER_SLIDER,
-            centerPoint = PointF(1850f, 620f)
+            centerPoint = PointF(2160f, 650f),
+            width = 320f,
+            height = 240f
         )
-        shifter.shifterSlots["R"] = PointF(1750f, 500f)
-        shifter.shifterSlots["1"] = PointF(1800f, 500f)
-        shifter.shifterSlots["2"] = PointF(1800f, 740f)
-        shifter.shifterSlots["3"] = PointF(1850f, 500f)
-        shifter.shifterSlots["4"] = PointF(1850f, 740f)
-        shifter.shifterSlots["5"] = PointF(1900f, 500f)
-        shifter.shifterSlots["6"] = PointF(1900f, 740f)
+        // Slot gigi BUSSID (relatif terhadap layar Full HD 2400x1080)
+        shifter.shifterSlots["R"] = PointF(2020f, 730f)
+        shifter.shifterSlots["1"] = PointF(2100f, 570f)
+        shifter.shifterSlots["2"] = PointF(2100f, 730f)
+        shifter.shifterSlots["3"] = PointF(2180f, 570f)
+        shifter.shifterSlots["4"] = PointF(2180f, 730f)
+        shifter.shifterSlots["5"] = PointF(2260f, 570f)
+        shifter.shifterSlots["6"] = PointF(2260f, 730f)
         activeWidgets.add(shifter)
 
-        // 3. Pedal Gas & Rem (Kanan Bawah)
+        // 4. Pedal Gas & Rem (Kanan Bawah)
         activeWidgets.add(
             MappingWidget(
                 id = "pedal_gas",
                 name = "Pedal Gas",
                 type = MappingType.PEDAL_CONTINUOUS,
-                centerPoint = PointF(2200f, 850f),
+                centerPoint = PointF(2280f, 870f),
+                width = 140f,
+                height = 200f,
                 boundAxis = MotionEvent.AXIS_GAS
             )
         )
@@ -82,35 +107,28 @@ object MappingManager {
                 id = "pedal_brake",
                 name = "Pedal Rem",
                 type = MappingType.PEDAL_CONTINUOUS,
-                centerPoint = PointF(2020f, 880f),
+                centerPoint = PointF(2050f, 890f),
+                width = 140f,
+                height = 180f,
                 boundAxis = MotionEvent.AXIS_BRAKE
             )
         )
 
-        // 4. Action Buttons (Klakson, Lampu Hazard, Sein)
-        activeWidgets.add(
-            MappingWidget(
-                id = "btn_horn",
-                name = "Klakson",
-                type = MappingType.TAP,
-                centerPoint = PointF(400f, 750f),
-                boundKeyCode = KeyEvent.KEYCODE_BUTTON_A
-            )
-        )
+        // 5. Tombol Aksi Umum (Lampu Hazard)
         activeWidgets.add(
             MappingWidget(
                 id = "btn_hazard",
                 name = "Lampu Hazard",
                 type = MappingType.TAP,
-                centerPoint = PointF(1150f, 120f),
-                boundKeyCode = KeyEvent.KEYCODE_BUTTON_Y
+                centerPoint = PointF(180f, 380f),
+                width = 90f,
+                height = 90f,
+                boundKeyCode = KeyEvent.KEYCODE_BUTTON_Y,
+                boundKeyName = "Button Y"
             )
         )
     }
 
-    /**
-     * Simpan konfigurasi kustom ke SharedPreferences
-     */
     fun saveCustomMapping(context: Context) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val jsonArray = JSONArray()
@@ -122,11 +140,14 @@ object MappingManager {
                 put("type", w.type.name)
                 put("x", w.centerPoint.x)
                 put("y", w.centerPoint.y)
+                put("width", w.width)
+                put("height", w.height)
                 put("steeringRadius", w.steeringRadius)
                 put("steeringDegrees", w.steeringDegrees)
                 put("steeringSensitivity", w.steeringSensitivity)
                 put("deadzone", w.deadzone)
                 put("boundKeyCode", w.boundKeyCode)
+                put("boundKeyName", w.boundKeyName)
                 put("boundAxis", w.boundAxis)
 
                 val slotsObj = JSONObject()
@@ -145,9 +166,6 @@ object MappingManager {
         prefs.edit().putString(KEY_WIDGETS, jsonArray.toString()).apply()
     }
 
-    /**
-     * Muat konfigurasi kustom dari SharedPreferences
-     */
     fun loadCustomMapping(context: Context) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val jsonStr = prefs.getString(KEY_WIDGETS, null) ?: return
@@ -163,11 +181,14 @@ object MappingManager {
                     name = obj.getString("name"),
                     type = type,
                     centerPoint = PointF(obj.getDouble("x").toFloat(), obj.getDouble("y").toFloat()),
+                    width = obj.optDouble("width", 120.0).toFloat(),
+                    height = obj.optDouble("height", 120.0).toFloat(),
                     steeringRadius = obj.optDouble("steeringRadius", 180.0).toFloat(),
                     steeringDegrees = obj.optDouble("steeringDegrees", 900.0).toFloat(),
                     steeringSensitivity = obj.optDouble("steeringSensitivity", 1.0).toFloat(),
                     deadzone = obj.optDouble("deadzone", 0.03).toFloat(),
                     boundKeyCode = obj.optInt("boundKeyCode", -1),
+                    boundKeyName = obj.optString("boundKeyName", "None"),
                     boundAxis = obj.optInt("boundAxis", -1)
                 )
 
@@ -201,7 +222,7 @@ object MappingManager {
             return false
         }
 
-        // 1. Setir Kemudi Axis X (Mendukung 900 Derajat)
+        // Setir Kemudi Axis X (900 Derajat)
         val steeringAxisVal = event.getAxisValue(MotionEvent.AXIS_X)
         val steeringWidget = activeWidgets.firstOrNull { it.type == MappingType.STEERING_WHEEL }
         if (steeringWidget != null) {
@@ -220,7 +241,7 @@ object MappingManager {
             }
         }
 
-        // 2. Pedal Gas & Rem
+        // Pedal Gas & Rem
         var gasVal = event.getAxisValue(MotionEvent.AXIS_GAS)
         if (gasVal == 0f) gasVal = event.getAxisValue(MotionEvent.AXIS_RTRIGGER)
         var brakeVal = event.getAxisValue(MotionEvent.AXIS_BRAKE)
@@ -248,10 +269,23 @@ object MappingManager {
     }
 
     fun processKeyEvent(event: KeyEvent): Boolean {
-        val service = TouchAccessibilityService.instance ?: return false
         val keyCode = event.keyCode
         val action = event.action
 
+        // Jika user sedang menunggu input tombol hardware pada dialog "Tekan tombol di setir..."
+        val listener = keyListenCallback
+        if (listener != null) {
+            if (action == KeyEvent.ACTION_DOWN) {
+                val name = KeyEvent.keyCodeToString(keyCode).removePrefix("KEYCODE_")
+                listener(keyCode, name)
+                keyListenCallback = null
+            }
+            return true
+        }
+
+        val service = TouchAccessibilityService.instance ?: return false
+
+        // Tap Tombol Kustom
         val tapWidget = activeWidgets.firstOrNull { it.type == MappingType.TAP && it.boundKeyCode == keyCode }
         if (tapWidget != null) {
             if (action == KeyEvent.ACTION_DOWN) {
@@ -260,30 +294,39 @@ object MappingManager {
             return true
         }
 
+        // H-Shifter (Dengan simulasi jalur lorong H-gate BUSSID)
         val shifterWidget = activeWidgets.firstOrNull { it.type == MappingType.SHIFTER_SLIDER }
         if (shifterWidget != null) {
             val targetGear = mapKeyCodeToGear(keyCode)
             if (targetGear != null) {
-                if (action == KeyEvent.ACTION_DOWN) {
-                    currentGear = targetGear
-                    val targetPos = shifterWidget.shifterSlots[targetGear]
-                    if (targetPos != null) {
-                        service.injectShifterSlide(
-                            shifterWidget.centerPoint.x,
-                            shifterWidget.centerPoint.y,
-                            targetPos.x,
-                            targetPos.y
+                val neutralX = shifterWidget.centerPoint.x
+                val neutralY = shifterWidget.centerPoint.y
+                val targetPos = shifterWidget.shifterSlots[targetGear]
+
+                if (targetPos != null) {
+                    if (action == KeyEvent.ACTION_DOWN) {
+                        currentGear = targetGear
+                        // Gerakan siku (H-gate): Netral -> Geser Horizontal sejajar kolom gigi target -> Dorong Vertikal ke gigi target
+                        service.injectShifterPath(
+                            startX = neutralX,
+                            startY = neutralY,
+                            midX = targetPos.x,
+                            midY = neutralY,
+                            endX = targetPos.x,
+                            endY = targetPos.y,
+                            durationMs = 60L
                         )
-                    }
-                } else if (action == KeyEvent.ACTION_UP && currentGear == targetGear) {
-                    currentGear = "N"
-                    val targetPos = shifterWidget.shifterSlots[targetGear]
-                    if (targetPos != null) {
-                        service.injectShifterSlide(
-                            targetPos.x,
-                            targetPos.y,
-                            shifterWidget.centerPoint.x,
-                            shifterWidget.centerPoint.y
+                    } else if (action == KeyEvent.ACTION_UP && currentGear == targetGear) {
+                        // Kembali ke Netral
+                        currentGear = "N"
+                        service.injectShifterPath(
+                            startX = targetPos.x,
+                            startY = targetPos.y,
+                            midX = targetPos.x,
+                            midY = neutralY,
+                            endX = neutralX,
+                            endY = neutralY,
+                            durationMs = 50L
                         )
                     }
                 }
@@ -294,7 +337,7 @@ object MappingManager {
         return false
     }
 
-    private fun mapKeyCodeToGear(keyCode: Int): String? {
+    fun mapKeyCodeToGear(keyCode: Int): String? {
         return when (keyCode) {
             KeyEvent.KEYCODE_BUTTON_1 -> "1"
             KeyEvent.KEYCODE_BUTTON_2 -> "2"
@@ -302,7 +345,7 @@ object MappingManager {
             KeyEvent.KEYCODE_BUTTON_4 -> "4"
             KeyEvent.KEYCODE_BUTTON_5 -> "5"
             KeyEvent.KEYCODE_BUTTON_6 -> "6"
-            KeyEvent.KEYCODE_BUTTON_R1 -> "R"
+            KeyEvent.KEYCODE_BUTTON_R1, KeyEvent.KEYCODE_BUTTON_7 -> "R"
             else -> null
         }
     }

@@ -1,7 +1,7 @@
 package com.mapper.pxnv9.model
 
 enum class MappingType {
-    TAP,               // Tombol single tap (klakson, lampu, sein, pintu, dll)
+    TAP,               // Tombol single tap (klakson, lampu, sein, pintu, wiper, dll)
     STEERING_WHEEL,    // Rotasi setir 900 / 270 derajat (Arc / circular continuous drag)
     SHIFTER_SLIDER,    // H-Shifter (titik tengah ke posisi gigi 1..6, R)
     PEDAL_CONTINUOUS   // Pedal gas / rem (Axis / Threshold -> hold touch & release)
@@ -17,6 +17,9 @@ data class MappingWidget(
     var name: String,
     val type: MappingType,
     var centerPoint: PointF,
+    // Ukuran widget (lebar / tinggi untuk resize)
+    var width: Float = 120f,
+    var height: Float = 120f,
     // Khusus Shifter: target koordinat posisi tiap gigi ("R", "1", "2", "3", "4", "5", "6")
     var shifterSlots: MutableMap<String, PointF> = mutableMapOf(),
     // Khusus Steering Wheel:
@@ -25,7 +28,8 @@ data class MappingWidget(
     var steeringSensitivity: Float = 1.0f,// Sensitivitas / multiplier
     // Deadzone untuk input axis (-1.0 .. 1.0)
     var deadzone: Float = 0.05f,
-    // Binding hardware
+    // Binding hardware (KeyCode dari tombol PXN V9)
     var boundKeyCode: Int = -1,
+    var boundKeyName: String = "None",
     var boundAxis: Int = -1
 )
