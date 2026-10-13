@@ -70,13 +70,15 @@ class MainActivity : AppCompatActivity() {
     /**
      * Wizard Kalibrasi Hardware Otomatis (Auto-Detect Axis Setir, Gas, Rem, Kopling)
      */
+    private var calibrationListener: ((axisId: Int, axisName: String, value: Float) -> Unit)? = null
+
     private fun showHardwareCalibrationDialog() {
         val dialogView = android.widget.LinearLayout(this).apply {
             orientation = android.widget.LinearLayout.VERTICAL
             setPadding(36, 24, 36, 24)
 
             val tvInstructions = android.widget.TextView(this@MainActivity).apply {
-                text = "Putar setir PXN atau tekan pedal gas/rem untuk mendeteksi Axis secara otomatis:"
+                text = "Putar setir PXN atau tekan pedal gas/rem untuk mendeteksi Axis secara live:"
                 textSize = 14f
                 setPadding(0, 0, 0, 16)
             }
@@ -84,23 +86,57 @@ class MainActivity : AppCompatActivity() {
 
             val tvDetected = android.widget.TextView(this@MainActivity).apply {
                 text = "Menunggu input hardware..."
-                textSize = 16f
-                setTextColor(android.graphics.Color.BLUE)
+                textSize = 15sp
+                setTextColor(android.graphics.Color.parseColor("#00E676"))
                 setPadding(0, 8, 0, 16)
             }
             addView(tvDetected)
+
+            calibrationListener = { axisId, axisName, value ->
+                tvDetected.text = "Terdeteksi: $axisName (ID: $axisId)\nNilai Input: ${String.format("%.2f", value)}"
+            }
         }
 
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Kalibrasi Axis Hardware")
             .setView(dialogView)
             .setPositiveButton("Simpan Kalibrasi") { d, _ ->
+                calibrationListener = null
                 com.mapper.pxnv9.manager.MappingManager.saveCurrentProfile(this)
                 Toast.makeText(this, "Kalibrasi Axis berhasil disimpan!", Toast.LENGTH_SHORT).show()
                 d.dismiss()
             }
-            .setNegativeButton("Tutup") { d, _ -> d.dismiss() }
+            .setNegativeButton("Tutup") { d, _ ->
+                calibrationListener = null
+                d.dismiss()
+            }
+            .setOnDismissListener { calibrationListener = null }
             .show()
+    }
+
+    override fun onGenericMotionEvent(event: android.view.MotionEvent): Boolean {
+        calibrationListener?.let { listener ->
+            val axes = intArrayOf(
+                android.view.MotionEvent.AXIS_X,
+                android.view.MotionEvent.AXIS_Y,
+                android.view.MotionEvent.AXIS_Z,
+                android.view.MotionEvent.AXIS_RZ,
+                android.view.MotionEvent.AXIS_GAS,
+                android.view.MotionEvent.AXIS_BRAKE,
+                android.view.MotionEvent.AXIS_RTRIGGER,
+                android.view.MotionEvent.AXIS_LTRIGGER
+            )
+            for (axis in axes) {
+                val value = event.getAxisValue(axis)
+                if (kotlin.math.abs(value) > 0.15f) {
+                    val name = android.view.MotionEvent.axisToString(axis).removePrefix("AXIS_")
+                    listener(axis, name, value)
+                    break
+                }
+            }
+            return true
+        }
+        return super.onGenericMotionEvent(event)
     }
 
     private fun showAdbWirelessDialog() {
