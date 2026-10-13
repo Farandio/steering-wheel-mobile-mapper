@@ -492,6 +492,61 @@ class OverlayService : Service() {
                 addView(btnListenKey)
             }
 
+            // Opsi Khusus Pedal Analog: Kalibrasi Axis Manual & Jarak Travel Pedal
+            if (widget.type == MappingType.PEDAL_ANALOG) {
+                val tvAxis = TextView(this@OverlayService).apply {
+                    text = "Axis Terikat: ${if (widget.boundAxis == -1) "Default (Auto)" else "MotionEvent.AXIS_${widget.boundAxis}"}"
+                    textSize = 14f
+                    setTextColor(Color.DKGRAY)
+                    setPadding(0, 16, 0, 8)
+                }
+                addView(tvAxis)
+
+                val btnPickAxis = Button(this@OverlayService).apply {
+                    text = "⚙️ Pilih Axis Manual (Gas / Brake / Trigger)"
+                    setOnClickListener {
+                        val axisOptions = arrayOf("Default Auto", "AXIS_GAS (22)", "AXIS_BRAKE (23)", "AXIS_RTRIGGER (18)", "AXIS_LTRIGGER (17)", "AXIS_Y (1)", "AXIS_RZ (14)")
+                        val axisValues = intArrayOf(-1, android.view.MotionEvent.AXIS_GAS, android.view.MotionEvent.AXIS_BRAKE, android.view.MotionEvent.AXIS_RTRIGGER, android.view.MotionEvent.AXIS_LTRIGGER, android.view.MotionEvent.AXIS_Y, android.view.MotionEvent.AXIS_RZ)
+                        AlertDialog.Builder(this@OverlayService)
+                            .setTitle("Pilih Axis Hardware")
+                            .setItems(axisOptions) { _, idx ->
+                                widget.boundAxis = axisValues[idx]
+                                tvAxis.text = "Axis Terikat: ${axisOptions[idx]}"
+                                Toast.makeText(this@OverlayService, "Axis disimpan: ${axisOptions[idx]}", Toast.LENGTH_SHORT).show()
+                            }
+                            .create().apply {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                    window?.setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
+                                }
+                            }.show()
+                    }
+                }
+                addView(btnPickAxis)
+
+                val tvTravel = TextView(this@OverlayService).apply {
+                    text = "Panjang Sapuan Slider Pedal: ${widget.pedalTravelDistance.toInt()} px"
+                    textSize = 14f
+                    setTextColor(Color.DKGRAY)
+                    setPadding(0, 16, 0, 8)
+                }
+                addView(tvTravel)
+
+                val sbTravel = SeekBar(this@OverlayService).apply {
+                    min = 60
+                    max = 350
+                    progress = widget.pedalTravelDistance.toInt()
+                    setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                        override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
+                            widget.pedalTravelDistance = progress.toFloat()
+                            tvTravel.text = "Panjang Sapuan Slider Pedal: $progress px"
+                        }
+                        override fun onStartTrackingTouch(sb: SeekBar?) {}
+                        override fun onStopTrackingTouch(sb: SeekBar?) {}
+                    })
+                }
+                addView(sbTravel)
+            }
+
             // 2. Resize Ukuran Tombol / Setir
             val tvResize = TextView(this@OverlayService).apply {
                 text = "Ubah Ukuran (Resize): ${(if (widget.type == MappingType.STEERING_WHEEL) widget.steeringRadius else widget.width).toInt()} px"
