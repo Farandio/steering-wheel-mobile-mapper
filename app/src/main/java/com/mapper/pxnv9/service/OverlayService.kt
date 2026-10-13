@@ -224,12 +224,18 @@ class OverlayService : Service() {
         }
 
         for (widget in MappingManager.activeWidgets) {
-            val v = if (widget.type == MappingType.STEERING_WHEEL) {
-                createSteeringHollowView(widget)
-            } else {
-                createStandardWidgetView(widget)
+            when (widget.type) {
+                MappingType.STEERING_WHEEL -> container.addView(createSteeringHollowView(widget))
+                MappingType.SHIFTER_SLIDER -> {
+                    // Tampilkan kotak utama shifter (titik netral)
+                    container.addView(createStandardWidgetView(widget))
+                    // Tampilkan pin individual untuk masing-masing gigi (R, 1, 2, 3, 4, 5, 6)
+                    for ((gearName, slotPoint) in widget.shifterSlots) {
+                        container.addView(createShifterSlotPinView(widget, gearName, slotPoint))
+                    }
+                }
+                else -> container.addView(createStandardWidgetView(widget))
             }
-            container.addView(v)
         }
     }
 
@@ -271,6 +277,69 @@ class OverlayService : Service() {
 
         attachDragAndClickListener(container, widget, size, size)
         return container
+    }
+
+    /**
+     * Pin Individual Gigi H-Shifter (R, 1, 2, 3, 4, 5, 6)
+     * Dapat digeser satu per satu ke lubang slot gigi BUSSID secara independen.
+     */
+    @SuppressLint("ClickableViewAccessibility")
+    private fun createShifterSlotPinView(widget: MappingWidget, gearName: String, slotPoint: PointF): View {
+        val pinSize = 64
+        val pin = TextView(this).apply {
+            text = gearName
+            textSize = 14f
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.parseColor("#E6FF5722")) // Oranye terang
+                setStroke(2, Color.WHITE)
+            }
+        }
+
+        val lp = FrameLayout.LayoutParams(pinSize, pinSize).apply {
+            leftMargin = (slotPoint.x - pinSize / 2).toInt()
+            topMargin = (slotPoint.y - pinSize / 2).toInt()
+        }
+        pin.layoutParams = lp
+
+        var startLeft = 0
+        var startTop = 0
+        var downX = 0f
+        var downY = 0f
+
+        pin.setOnTouchListener { v, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    startLeft = (v.layoutParams as FrameLayout.LayoutParams).leftMargin
+                    startTop = (v.layoutParams as FrameLayout.LayoutParams).topMargin
+                    downX = event.rawX
+                    downY = event.rawY
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val newLeft = startLeft + (event.rawX - downX).toInt()
+                    val newTop = startTop + (event.rawY - downY).toInt()
+                    val p = v.layoutParams as FrameLayout.LayoutParams
+                    p.leftMargin = newLeft
+                    p.topMargin = newTop
+                    v.layoutParams = p
+
+                    // Update koordinat slot gigi spesifik
+                    slotPoint.x = (newLeft + pinSize / 2).toFloat()
+                    slotPoint.y = (newTop + pinSize / 2).toFloat()
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    Toast.makeText(this@OverlayService, "Posisi Gigi $gearName diatur!", Toast.LENGTH_SHORT).show()
+                    true
+                }
+                else -> false
+            }
+        }
+
+        return pin
     }
 
     /**

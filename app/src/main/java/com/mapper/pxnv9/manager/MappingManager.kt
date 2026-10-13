@@ -241,7 +241,7 @@ object MappingManager {
             }
         }
 
-        // Pedal Gas & Rem
+        // 2. Pedal Gas & Rem (Progresif Analog)
         var gasVal = event.getAxisValue(MotionEvent.AXIS_GAS)
         if (gasVal == 0f) gasVal = event.getAxisValue(MotionEvent.AXIS_RTRIGGER)
         var brakeVal = event.getAxisValue(MotionEvent.AXIS_BRAKE)
@@ -249,20 +249,24 @@ object MappingManager {
 
         val gasWidget = activeWidgets.firstOrNull { it.id == "pedal_gas" }
         if (gasWidget != null) {
-            val pressed = gasVal > 0.2f
-            if (pressed != isThrottlePressed) {
-                isThrottlePressed = pressed
-                service.injectContinuousTouch(gasWidget.centerPoint.x, gasWidget.centerPoint.y, pressed, "throttle")
-            }
+            val effGas = if (gasVal < gasWidget.deadzone) 0f else gasVal
+            service.injectPedalAnalog(
+                baseX = gasWidget.centerPoint.x,
+                baseY = gasWidget.centerPoint.y,
+                travelDistance = gasWidget.pedalTravelDistance,
+                pressure = effGas
+            )
         }
 
         val brakeWidget = activeWidgets.firstOrNull { it.id == "pedal_brake" }
         if (brakeWidget != null) {
-            val pressed = brakeVal > 0.2f
-            if (pressed != isBrakePressed) {
-                isBrakePressed = pressed
-                service.injectContinuousTouch(brakeWidget.centerPoint.x, brakeWidget.centerPoint.y, pressed, "brake")
-            }
+            val effBrake = if (brakeVal < brakeWidget.deadzone) 0f else brakeVal
+            service.injectPedalAnalog(
+                baseX = brakeWidget.centerPoint.x,
+                baseY = brakeWidget.centerPoint.y,
+                travelDistance = brakeWidget.pedalTravelDistance,
+                pressure = effBrake
+            )
         }
 
         return true

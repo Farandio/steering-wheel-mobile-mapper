@@ -66,35 +66,19 @@ class TouchAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * 2. Continuous / Hold Touch (Pedal Gas / Rem)
+     * 2. Analog Progressive Pedal (Pedal Gas / Rem Progresif):
+     * Menggeser sentuhan dari pangkal pedal ke atas/bawah sesuai persentase injakan (0.0f - 1.0f).
+     * Jika dilepas (pressure <= 0.05f), sentuhan diangkat.
      */
-    private var activeStrokes = mutableMapOf<String, GestureDescription.StrokeDescription>()
-
-    fun injectContinuousTouch(x: Float, y: Float, isDown: Boolean, strokeId: String = "pedal") {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val path = Path().apply {
-                moveTo(x, y)
-                lineTo(x, y)
-            }
-
-            if (isDown) {
-                val stroke = GestureDescription.StrokeDescription(path, 0, 1000L, true)
-                activeStrokes[strokeId] = stroke
-                val gesture = GestureDescription.Builder().addStroke(stroke).build()
-                dispatchGesture(gesture, null, null)
-            } else {
-                val prevStroke = activeStrokes.remove(strokeId)
-                if (prevStroke != null) {
-                    val finishStroke = prevStroke.continueStroke(path, 0, 50L, false)
-                    val gesture = GestureDescription.Builder().addStroke(finishStroke).build()
-                    dispatchGesture(gesture, null, null)
-                }
-            }
-        } else {
-            if (isDown) {
-                injectTap(x, y, 200L)
-            }
+    fun injectPedalAnalog(baseX: Float, baseY: Float, travelDistance: Float, pressure: Float, durationMs: Long = 30L) {
+        val targetY = baseY - (travelDistance * pressure.coerceIn(0f, 1f))
+        val path = Path().apply {
+            moveTo(baseX, baseY)
+            lineTo(baseX, targetY)
         }
+        val stroke = GestureDescription.StrokeDescription(path, 0, durationMs)
+        val gesture = GestureDescription.Builder().addStroke(stroke).build()
+        dispatchGesture(gesture, null, null)
     }
 
     /**
