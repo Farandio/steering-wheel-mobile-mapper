@@ -50,6 +50,10 @@ class MainActivity : AppCompatActivity() {
             showHardwareCalibrationDialog()
         }
 
+        findViewById<Button>(R.id.btnToggleAdb).setOnClickListener {
+            showAdbWirelessDialog()
+        }
+
         btnToggleOverlay.setOnClickListener {
             if (TouchAccessibilityService.instance == null) {
                 Toast.makeText(this, "Aktifkan Accessibility Service terlebih dahulu!", Toast.LENGTH_SHORT).show()
@@ -96,6 +100,44 @@ class MainActivity : AppCompatActivity() {
                 d.dismiss()
             }
             .setNegativeButton("Tutup") { d, _ -> d.dismiss() }
+            .show()
+    }
+
+    private fun showAdbWirelessDialog() {
+        val dialogView = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(36, 24, 36, 24)
+
+            val tvInfo = android.widget.TextView(this@MainActivity).apply {
+                text = "⚡ Mode ADB Wireless Debugging (Zero Latency)\n\n" +
+                        "1. Aktifkan Opsi Pengembang (Developer Options) di HP Anda.\n" +
+                        "2. Aktifkan 'Wireless Debugging' (Debugging Nirkabel).\n" +
+                        "3. Mode ini menginjeksi sentuhan tanpa delay (0ms) setara aplikasi Mantis Gamepad Pro.\n"
+                textSize = 13f
+            }
+            addView(tvInfo)
+
+            val btnConnect = Button(this@MainActivity).apply {
+                text = if (com.mapper.pxnv9.manager.MappingManager.useAdbZeroLatencyMode) "Matikan Mode ADB" else "Aktifkan Sesi Shell / ADB"
+                setBackgroundColor(android.graphics.Color.parseColor("#00838F"))
+                setTextColor(android.graphics.Color.WHITE)
+                setOnClickListener {
+                    val success = com.mapper.pxnv9.service.ShellTouchInjector.startShellSession()
+                    com.mapper.pxnv9.manager.MappingManager.useAdbZeroLatencyMode = success
+                    if (success) {
+                        Toast.makeText(this@MainActivity, "Mode ADB / Shell Zero Latency AKTIF!", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(this@MainActivity, "Mode Standar (Accessibility Non-Root) Aktif", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            addView(btnConnect)
+        }
+
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Pengaturan ADB Zero Latency")
+            .setView(dialogView)
+            .setPositiveButton("Tutup") { d, _ -> d.dismiss() }
             .show()
     }
 

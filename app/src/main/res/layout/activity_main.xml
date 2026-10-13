@@ -55,6 +55,15 @@
         android:textColor="#FFFFFF" />
 
     <Button
+        android:id="@+id/btnToggleAdb"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="⚡ ADB Wireless Debugging (0ms Zero Delay)"
+        android:layout_marginBottom="16dp"
+        android:backgroundTint="#455A64"
+        android:textColor="#FFFFFF" />
+
+    <Button
         android:id="@+id/btnToggleOverlay"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

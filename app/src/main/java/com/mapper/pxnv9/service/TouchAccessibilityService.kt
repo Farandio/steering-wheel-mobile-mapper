@@ -57,6 +57,11 @@ class TouchAccessibilityService : AccessibilityService() {
      * 1. Single Tap (Klakson, Lampu, Hazard, Pintu, Wiper, dll)
      */
     fun injectTap(x: Float, y: Float, durationMs: Long = 40L) {
+        if (com.mapper.pxnv9.manager.MappingManager.useAdbZeroLatencyMode && ShellTouchInjector.isAdbConnected) {
+            ShellTouchInjector.injectTap(x, y)
+            return
+        }
+
         val path = Path().apply {
             moveTo(x, y)
         }
