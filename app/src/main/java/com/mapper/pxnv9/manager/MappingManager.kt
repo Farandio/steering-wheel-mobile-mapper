@@ -44,6 +44,9 @@ object MappingManager {
     private var isThrottlePressed = false
     private var isBrakePressed = false
     var currentGear: String = "N"
+    var isClutchDepressed: Boolean = false
+    var lastGearBeforeClutch: String? = null
+    var onClutchChanged: ((isDepressed: Boolean) -> Unit)? = null
 
     init {
         setupDefaultBussidProfile()
@@ -128,6 +131,19 @@ object MappingManager {
             )
         )
 
+        activeWidgets.add(
+            MappingWidget(
+                id = "pedal_clutch",
+                name = "Pedal Kopling",
+                type = MappingType.PEDAL_ANALOG,
+                centerPoint = PointF(1850f, 890f),
+                width = 140f,
+                height = 180f,
+                pedalTravelDistance = 140f,
+                boundAxis = MotionEvent.AXIS_Y
+            )
+        )
+
         // 5. Tombol Aksi Umum (Lampu Hazard)
         activeWidgets.add(
             MappingWidget(
@@ -194,6 +210,7 @@ object MappingManager {
                 put("boundKeyCode", w.boundKeyCode)
                 put("boundKeyName", w.boundKeyName)
                 put("boundAxis", w.boundAxis)
+                put("requireClutchToShift", w.requireClutchToShift)
 
                 val slotsObj = JSONObject()
                 for ((slotKey, pt) in w.shifterSlots) {
@@ -240,7 +257,8 @@ object MappingManager {
                     deadzone = obj.optDouble("deadzone", 0.03).toFloat(),
                     boundKeyCode = obj.optInt("boundKeyCode", -1),
                     boundKeyName = obj.optString("boundKeyName", "None"),
-                    boundAxis = obj.optInt("boundAxis", -1)
+                    boundAxis = obj.optInt("boundAxis", -1),
+                    requireClutchToShift = obj.optBoolean("requireClutchToShift", true)
                 )
 
                 val slotsObj = obj.optJSONObject("shifterSlots")
@@ -365,6 +383,65 @@ object MappingManager {
             )
         }
 
+        // 3. Pedal Kopling (Clutch Simulation: Netralkan Transmisi & Syarat Pindah Gigi)
+        val clutchWidget = activeWidgets.firstOrNull { it.id == "pedal_clutch" }
+        if (clutchWidget != null) {
+            val clutchAxis = if (clutchWidget.boundAxis != -1) clutchWidget.boundAxis else MotionEvent.AXIS_Y
+            var clutchVal = event.getAxisValue(clutchAxis)
+            if (clutchVal == 0f && clutchWidget.boundAxis == -1) clutchVal = event.getAxisValue(MotionEvent.AXIS_Z)
+            
+            // Injakan kopling aktif jika melebihi threshold 30%
+            val clutchPressedNow = kotlin.math.abs(clutchVal) > 0.30f
+            if (clutchPressedNow != isClutchDepressed) {
+                isClutchDepressed = clutchPressedNow
+                onClutchChanged?.invoke(isClutchDepressed)
+
+                val shifterWidget = activeWidgets.firstOrNull { it.type == MappingType.SHIFTER_SLIDER }
+                if (shifterWidget != null) {
+                    val neutralX = shifterWidget.centerPoint.x
+                    val neutralY = shifterWidget.centerPoint.y
+
+                    if (isClutchDepressed) {
+                        // Pedal kopling diinjak: Putus kopling -> Tarik tuas ke posisi NETRAL virtual di game
+                        if (currentGear != "N") {
+                            lastGearBeforeClutch = currentGear
+                            val activeSlot = shifterWidget.shifterSlots[currentGear]
+                            val startX = activeSlot?.x ?: neutralX
+                            val startY = activeSlot?.y ?: neutralY
+
+                            val waypoints = listOf(
+                                Pair(startX, startY),
+                                Pair(startX, neutralY),
+                                Pair(neutralX, neutralY)
+                            )
+                            service.injectMultiPointPath(waypoints, durationMs = 60L, holdAtEndMs = 50L)
+                            currentGear = "N"
+                            onGearChanged?.invoke("N (Kopling)")
+                            context?.let { triggerHapticFeedback(it, 30L) }
+                        }
+                    } else {
+                        // Pedal kopling dilepas: Jika tuas fisik masih berada di suatu gigi, sambungkan kembali
+                        val physicalSlot = lastGearBeforeClutch
+                        if (physicalSlot != null && physicalSlot != "N") {
+                            val targetPos = shifterWidget.shifterSlots[physicalSlot]
+                            if (targetPos != null) {
+                                currentGear = physicalSlot
+                                onGearChanged?.invoke(physicalSlot)
+                                context?.let { triggerHapticFeedback(it, 40L) }
+
+                                val waypoints = listOf(
+                                    Pair(neutralX, neutralY),
+                                    Pair(targetPos.x, neutralY),
+                                    Pair(targetPos.x, targetPos.y)
+                                )
+                                service.injectMultiPointPath(waypoints, durationMs = 60L, holdAtEndMs = 60L)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         return true
     }
 
@@ -412,8 +489,17 @@ object MappingManager {
 
                 if (targetPos != null) {
                     if (action == KeyEvent.ACTION_DOWN) {
+                        // CEK KOPLING: Jika requireClutchToShift aktif & kopling belum diinjak, tolak perpindahan gigi
+                        if (shifterWidget.requireClutchToShift && !isClutchDepressed) {
+                            // Getar haptic peringatan (misal suara/sensasi gear grind / gigi nyangkut)
+                            context?.let { triggerHapticFeedback(it, 120L) }
+                            onGearChanged?.invoke("Harus Injak Kopling!")
+                            return true
+                        }
+
                         val prevGear = currentGear
                         currentGear = targetGear
+                        lastGearBeforeClutch = targetGear
                         onGearChanged?.invoke(targetGear)
                         context?.let { triggerHapticFeedback(it, 50L) }
 
@@ -456,6 +542,7 @@ object MappingManager {
                     } else if (action == KeyEvent.ACTION_UP && currentGear == targetGear) {
                         // Tuas fisik dilepas ke Netral
                         currentGear = "N"
+                        lastGearBeforeClutch = null
                         onGearChanged?.invoke("N")
 
                         val waypoints = listOf(

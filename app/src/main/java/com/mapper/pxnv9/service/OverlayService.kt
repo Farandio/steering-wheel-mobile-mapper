@@ -98,12 +98,21 @@ class OverlayService : Service() {
         }
         pillLayout.addView(tvLiveHud)
 
+        // Helper untuk format teks HUD
+        fun refreshHudText(angle: Float = 0f, gear: String = MappingManager.currentGear) {
+            val clutchIndicator = if (MappingManager.isClutchDepressed) " (CLUTCH)" else ""
+            tvLiveHud.text = " [${angle.toInt()}° | $gear$clutchIndicator]"
+        }
+
         // Observer untuk update HUD live
         MappingManager.onSteeringAngleChanged = { deg, _ ->
-            tvLiveHud.text = " [${deg.toInt()}° | ${MappingManager.currentGear}]"
+            refreshHudText(angle = deg, gear = MappingManager.currentGear)
         }
         MappingManager.onGearChanged = { gear ->
-            tvLiveHud.text = " [${gear}]"
+            refreshHudText(gear = gear)
+        }
+        MappingManager.onClutchChanged = { _ ->
+            refreshHudText(gear = MappingManager.currentGear)
         }
 
         var startX = 0
@@ -503,10 +512,28 @@ class OverlayService : Service() {
                 addView(tvAxis)
 
                 val btnPickAxis = Button(this@OverlayService).apply {
-                    text = "⚙️ Pilih Axis Manual (Gas / Brake / Trigger)"
+                    text = "⚙️ Pilih Axis Manual (Gas / Brake / Clutch / Trigger)"
                     setOnClickListener {
-                        val axisOptions = arrayOf("Default Auto", "AXIS_GAS (22)", "AXIS_BRAKE (23)", "AXIS_RTRIGGER (18)", "AXIS_LTRIGGER (17)", "AXIS_Y (1)", "AXIS_RZ (14)")
-                        val axisValues = intArrayOf(-1, android.view.MotionEvent.AXIS_GAS, android.view.MotionEvent.AXIS_BRAKE, android.view.MotionEvent.AXIS_RTRIGGER, android.view.MotionEvent.AXIS_LTRIGGER, android.view.MotionEvent.AXIS_Y, android.view.MotionEvent.AXIS_RZ)
+                        val axisOptions = arrayOf(
+                            "Default Auto",
+                            "AXIS_GAS (22) - Pedal Gas",
+                            "AXIS_BRAKE (23) - Pedal Rem",
+                            "AXIS_Y (1) - Pedal Kopling PXN",
+                            "AXIS_Z (11) - Pedal Kopling Alternatif",
+                            "AXIS_RZ (14) - Kopling / Rudder",
+                            "AXIS_RTRIGGER (18)",
+                            "AXIS_LTRIGGER (17)"
+                        )
+                        val axisValues = intArrayOf(
+                            -1,
+                            android.view.MotionEvent.AXIS_GAS,
+                            android.view.MotionEvent.AXIS_BRAKE,
+                            android.view.MotionEvent.AXIS_Y,
+                            android.view.MotionEvent.AXIS_Z,
+                            android.view.MotionEvent.AXIS_RZ,
+                            android.view.MotionEvent.AXIS_RTRIGGER,
+                            android.view.MotionEvent.AXIS_LTRIGGER
+                        )
                         AlertDialog.Builder(this@OverlayService)
                             .setTitle("Pilih Axis Hardware")
                             .setItems(axisOptions) { _, idx ->
@@ -545,6 +572,26 @@ class OverlayService : Service() {
                     })
                 }
                 addView(sbTravel)
+            }
+
+            // Opsi Khusus H-Shifter: Syarat Injak Kopling Realistis
+            if (widget.type == MappingType.SHIFTER_SLIDER) {
+                val cbClutch = android.widget.CheckBox(this@OverlayService).apply {
+                    text = "🔒 Wajib Injak Kopling Saat Oper Gigi (Realistis)"
+                    isChecked = widget.requireClutchToShift
+                    textSize = 14f
+                    setTextColor(Color.BLACK)
+                    setPadding(0, 16, 0, 8)
+                    setOnCheckedChangeListener { _, isChecked ->
+                        widget.requireClutchToShift = isChecked
+                        Toast.makeText(
+                            this@OverlayService,
+                            if (isChecked) "Mode Realistis Aktif: Harus injak kopling untuk oper gigi!" else "Oper gigi langsung tanpa kopling diizinkan",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+                addView(cbClutch)
             }
 
             // 2. Resize Ukuran Tombol / Setir

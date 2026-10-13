@@ -29,7 +29,7 @@ data class MappingWidget(
     var steeringSensitivity: Float = 1.0f,// Sensitivitas / multiplier
     var steeringLinearity: Float = 1.0f,  // Kurva respons non-linearitas kemudi (0.5 - 2.5)
     var autoCenterSmoothing: Boolean = true, // Smoothing interpolator saat kemudi kembali ke tengah
-    // Khusus Pedal Analog:
+    // Khusus Pedal Analog & Kopling:
     var pedalTravelDistance: Float = 160f, // Panjang sapuan slider pedal vertikal di layar (px)
     // Deadzone untuk input axis (-1.0 .. 1.0)
     var deadzone: Float = 0.05f,
@@ -37,6 +37,8 @@ data class MappingWidget(
     var boundKeyCode: Int = -1,
     var boundKeyName: String = "None",
     var boundAxis: Int = -1,
+    // Khusus Shifter / Kopling:
+    var requireClutchToShift: Boolean = true, // Wajib injak kopling untuk oper gigi
     // Khusus Macro: daftar koordinat tap berurutan dan delay ms
     var macroPoints: MutableList<PointF> = mutableListOf(),
     var macroDelayMs: Long = 120L
