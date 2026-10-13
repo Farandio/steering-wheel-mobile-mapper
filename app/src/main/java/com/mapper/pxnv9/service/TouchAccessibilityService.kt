@@ -92,12 +92,18 @@ class TouchAccessibilityService : AccessibilityService() {
         fromNorm: Float,
         toNorm: Float,
         maxDegrees: Float,
-        sensitivity: Float
+        sensitivity: Float,
+        linearity: Float = 1.0f
     ) {
         val maxRotRadian = (maxDegrees / 2f) * (PI.toFloat() / 180f) * sensitivity
 
-        val startAngle = -PI.toFloat() / 2f + (fromNorm * maxRotRadian)
-        val endAngle = -PI.toFloat() / 2f + (toNorm * maxRotRadian)
+        // Terapkan kurva non-linearitas: sign(x) * |x|^linearity
+        // Nilai linearity > 1.0 membuat respon di tengah lebih halus/tenang untuk kestabilan jalan lurus
+        val curvedFrom = kotlin.math.sign(fromNorm) * kotlin.math.abs(fromNorm).toDouble().let { Math.pow(it, linearity.toDouble()).toFloat() }
+        val curvedTo = kotlin.math.sign(toNorm) * kotlin.math.abs(toNorm).toDouble().let { Math.pow(it, linearity.toDouble()).toFloat() }
+
+        val startAngle = -PI.toFloat() / 2f + (curvedFrom * maxRotRadian)
+        val endAngle = -PI.toFloat() / 2f + (curvedTo * maxRotRadian)
 
         val startX = centerX + radius * cos(startAngle)
         val startY = centerY + radius * sin(startAngle)
@@ -113,6 +119,22 @@ class TouchAccessibilityService : AccessibilityService() {
         val stroke = GestureDescription.StrokeDescription(path, 0, 25L)
         val gesture = GestureDescription.Builder().addStroke(stroke).build()
         dispatchGesture(gesture, null, null)
+    }
+
+    /**
+     * Eksekusi Macro Tap (Klakson Telolet / Basuri)
+     */
+    fun injectMacroTaps(points: List<com.mapper.pxnv9.model.PointF>, delayBetweenMs: Long = 100L) {
+        Thread {
+            for (pt in points) {
+                injectTap(pt.x, pt.y, 40L)
+                try {
+                    Thread.sleep(delayBetweenMs)
+                } catch (e: InterruptedException) {
+                    break
+                }
+            }
+        }.start()
     }
 
     /**

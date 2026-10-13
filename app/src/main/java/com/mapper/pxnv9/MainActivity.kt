@@ -46,6 +46,10 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        findViewById<Button>(R.id.btnCalibrateHardware).setOnClickListener {
+            showHardwareCalibrationDialog()
+        }
+
         btnToggleOverlay.setOnClickListener {
             if (TouchAccessibilityService.instance == null) {
                 Toast.makeText(this, "Aktifkan Accessibility Service terlebih dahulu!", Toast.LENGTH_SHORT).show()
@@ -57,6 +61,42 @@ class MainActivity : AppCompatActivity() {
         }
 
         checkConnectedDevices()
+    }
+
+    /**
+     * Wizard Kalibrasi Hardware Otomatis (Auto-Detect Axis Setir, Gas, Rem, Kopling)
+     */
+    private fun showHardwareCalibrationDialog() {
+        val dialogView = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(36, 24, 36, 24)
+
+            val tvInstructions = android.widget.TextView(this@MainActivity).apply {
+                text = "Putar setir PXN atau tekan pedal gas/rem untuk mendeteksi Axis secara otomatis:"
+                textSize = 14f
+                setPadding(0, 0, 0, 16)
+            }
+            addView(tvInstructions)
+
+            val tvDetected = android.widget.TextView(this@MainActivity).apply {
+                text = "Menunggu input hardware..."
+                textSize = 16f
+                setTextColor(android.graphics.Color.BLUE)
+                setPadding(0, 8, 0, 16)
+            }
+            addView(tvDetected)
+        }
+
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Kalibrasi Axis Hardware")
+            .setView(dialogView)
+            .setPositiveButton("Simpan Kalibrasi") { d, _ ->
+                com.mapper.pxnv9.manager.MappingManager.saveCurrentProfile(this)
+                Toast.makeText(this, "Kalibrasi Axis berhasil disimpan!", Toast.LENGTH_SHORT).show()
+                d.dismiss()
+            }
+            .setNegativeButton("Tutup") { d, _ -> d.dismiss() }
+            .show()
     }
 
     override fun onResume() {

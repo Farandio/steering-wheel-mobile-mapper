@@ -306,8 +306,9 @@ object MappingManager {
         }
 
         // 1. Setir Kemudi Axis X (900 Derajat)
-        val steeringAxisVal = event.getAxisValue(MotionEvent.AXIS_X)
         val steeringWidget = activeWidgets.firstOrNull { it.type == MappingType.STEERING_WHEEL }
+        val steeringAxisId = steeringWidget?.boundAxis?.takeIf { it != -1 } ?: MotionEvent.AXIS_X
+        val steeringAxisVal = event.getAxisValue(steeringAxisId)
         if (steeringWidget != null) {
             val effectiveVal = if (kotlin.math.abs(steeringAxisVal) < steeringWidget.deadzone) 0f else steeringAxisVal
             if (kotlin.math.abs(effectiveVal - lastSteeringNormVal) > 0.02f) {
@@ -318,7 +319,8 @@ object MappingManager {
                     fromNorm = lastSteeringNormVal,
                     toNorm = effectiveVal,
                     maxDegrees = steeringWidget.steeringDegrees,
-                    sensitivity = steeringWidget.steeringSensitivity
+                    sensitivity = steeringWidget.steeringSensitivity,
+                    linearity = steeringWidget.steeringLinearity
                 )
 
                 // Haptic getaran saat setir mentok kiri/kanan (Lock-to-lock)
@@ -334,14 +336,12 @@ object MappingManager {
             }
         }
 
-        // 2. Pedal Gas & Rem (Progresif Analog)
-        var gasVal = event.getAxisValue(MotionEvent.AXIS_GAS)
-        if (gasVal == 0f) gasVal = event.getAxisValue(MotionEvent.AXIS_RTRIGGER)
-        var brakeVal = event.getAxisValue(MotionEvent.AXIS_BRAKE)
-        if (brakeVal == 0f) brakeVal = event.getAxisValue(MotionEvent.AXIS_LTRIGGER)
-
+        // 2. Pedal Gas & Rem (Progresif Analog & Dynamic Bound Axis)
         val gasWidget = activeWidgets.firstOrNull { it.id == "pedal_gas" }
         if (gasWidget != null) {
+            val gasAxis = if (gasWidget.boundAxis != -1) gasWidget.boundAxis else MotionEvent.AXIS_GAS
+            var gasVal = event.getAxisValue(gasAxis)
+            if (gasVal == 0f && gasWidget.boundAxis == -1) gasVal = event.getAxisValue(MotionEvent.AXIS_RTRIGGER)
             val effGas = if (gasVal < gasWidget.deadzone) 0f else gasVal
             service.injectPedalAnalog(
                 baseX = gasWidget.centerPoint.x,
@@ -353,6 +353,9 @@ object MappingManager {
 
         val brakeWidget = activeWidgets.firstOrNull { it.id == "pedal_brake" }
         if (brakeWidget != null) {
+            val brakeAxis = if (brakeWidget.boundAxis != -1) brakeWidget.boundAxis else MotionEvent.AXIS_BRAKE
+            var brakeVal = event.getAxisValue(brakeAxis)
+            if (brakeVal == 0f && brakeWidget.boundAxis == -1) brakeVal = event.getAxisValue(MotionEvent.AXIS_LTRIGGER)
             val effBrake = if (brakeVal < brakeWidget.deadzone) 0f else brakeVal
             service.injectPedalAnalog(
                 baseX = brakeWidget.centerPoint.x,
@@ -382,11 +385,17 @@ object MappingManager {
 
         val service = TouchAccessibilityService.instance ?: return false
 
-        // Tap Tombol Kustom
-        val tapWidget = activeWidgets.firstOrNull { it.type == MappingType.TAP && it.boundKeyCode == keyCode }
+        // Tap Tombol Kustom & Macro
+        val tapWidget = activeWidgets.firstOrNull {
+            (it.type == MappingType.TAP || it.type == MappingType.MACRO_TAP) && it.boundKeyCode == keyCode
+        }
         if (tapWidget != null) {
             if (action == KeyEvent.ACTION_DOWN) {
-                service.injectTap(tapWidget.centerPoint.x, tapWidget.centerPoint.y)
+                if (tapWidget.type == MappingType.MACRO_TAP && tapWidget.macroPoints.isNotEmpty()) {
+                    service.injectMacroTaps(tapWidget.macroPoints, tapWidget.macroDelayMs)
+                } else {
+                    service.injectTap(tapWidget.centerPoint.x, tapWidget.centerPoint.y)
+                }
                 context?.let { triggerHapticFeedback(it, 35L) }
             }
             return true

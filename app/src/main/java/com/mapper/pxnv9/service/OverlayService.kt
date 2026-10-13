@@ -623,6 +623,29 @@ class OverlayService : Service() {
             }
             addView(sbSens)
 
+            // 3. Slider Linearity (Kurva Respons Non-Linear Kemudi)
+            val tvLin = TextView(this@OverlayService).apply {
+                text = "Kurva Respons (Linearity): ${String.format("%.1f", steeringWidget.steeringLinearity)}x\n(>1.0x = Stabil di tengah saat jalan lurus)"
+                textSize = 14f
+                setPadding(0, 20, 0, 10)
+            }
+            addView(tvLin)
+
+            val sbLin = SeekBar(this@OverlayService).apply {
+                max = 20 // 0.5x sampai 2.5x
+                progress = ((steeringWidget.steeringLinearity - 0.5f) * 10).toInt().coerceIn(0, 20)
+                setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                    override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
+                        steeringWidget.steeringLinearity = 0.5f + (progress / 10f)
+                        tvLin.text = "Kurva Respons (Linearity): ${String.format("%.1f", steeringWidget.steeringLinearity)}x\n(>1.0x = Stabil di tengah saat jalan lurus)"
+                    }
+                    override fun onStartTrackingTouch(sb: SeekBar?) {}
+                    override fun onStopTrackingTouch(sb: SeekBar?) {}
+                })
+            }
+            addView(sbLin)
+
+            // 4. Slider Deadzone
             val tvDz = TextView(this@OverlayService).apply {
                 text = "Deadzone: ${(steeringWidget.deadzone * 100).toInt()}%"
                 textSize = 15f
