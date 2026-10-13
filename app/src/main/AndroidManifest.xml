@@ -11,7 +11,7 @@
         android:label="PXN V9 Mapper"
         android:roundIcon="@android:drawable/sym_def_app_icon"
         android:supportsRtl="true"
-        android:theme="@style/Theme.AppCompat.Light.NoActionBar">
+        android:theme="@style/Theme.PXNMapper">
 
         <activity
             android:name=".MainActivity"

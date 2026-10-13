@@ -1,74 +1,201 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:padding="24dp">
+    android:background="@color/bg_dark"
+    android:fillViewport="true">
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="PXN V9 Gen 2 - BUSSID Keymapper"
-        android:textSize="20sp"
-        android:textStyle="bold"
-        android:layout_marginBottom="16dp" />
-
-    <TextView
-        android:id="@+id/tvDeviceStatus"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Memeriksa status perangkat..."
-        android:padding="12dp"
-        android:background="#EEEEEE"
-        android:layout_marginBottom="12dp" />
+        android:orientation="vertical"
+        android:padding="20dp">
 
-    <TextView
-        android:id="@+id/tvServiceStatus"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Accessibility Service: Memeriksa..."
-        android:padding="12dp"
-        android:background="#EEEEEE"
-        android:layout_marginBottom="24dp" />
+        <!-- Header Banner -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="20dp">
 
-    <Button
-        android:id="@+id/btnGrantAccessibility"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="1. Buka Pengaturan Accessibility"
-        android:layout_marginBottom="8dp" />
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="PXN V9 GEN 2"
+                android:textColor="@color/text_primary"
+                android:textSize="22sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.05" />
 
-    <Button
-        android:id="@+id/btnGrantOverlay"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="2. Izinkan Display Over Other Apps"
-        android:layout_marginBottom="16dp" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="BUSSID PRO"
+                android:textColor="@color/primary_accent"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:background="#2200E676"
+                android:paddingHorizontal="10dp"
+                android:paddingVertical="4dp" />
+        </LinearLayout>
 
-    <Button
-        android:id="@+id/btnCalibrateHardware"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="🔧 Kalibrasi Setir &amp; Pedal (Auto-Detect Axis)"
-        android:layout_marginBottom="16dp"
-        android:backgroundTint="#00838F"
-        android:textColor="#FFFFFF" />
+        <!-- Status Cards Container -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:cardCornerRadius="16dp"
+            app:cardBackgroundColor="@color/card_dark"
+            app:strokeColor="@color/card_dark_stroke"
+            app:strokeWidth="1dp"
+            android:layout_marginBottom="16dp">
 
-    <Button
-        android:id="@+id/btnToggleAdb"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="⚡ ADB Wireless Debugging (0ms Zero Delay)"
-        android:layout_marginBottom="16dp"
-        android:backgroundTint="#455A64"
-        android:textColor="#FFFFFF" />
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
 
-    <Button
-        android:id="@+id/btnToggleOverlay"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Mulai Layanan Keymapper (Overlay)"
-        android:backgroundTint="#2E7D32"
-        android:textColor="#FFFFFF" />
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="HARDWARE STATUS"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="11sp"
+                    android:textStyle="bold"
+                    android:letterSpacing="0.1"
+                    android:layout_marginBottom="8dp" />
 
-</LinearLayout>
+                <TextView
+                    android:id="@+id/tvDeviceStatus"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Memeriksa perangkat kemudi..."
+                    android:textColor="@color/text_primary"
+                    android:textSize="14sp"
+                    android:layout_marginBottom="12dp" />
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:background="@color/card_dark_stroke"
+                    android:layout_marginBottom="12dp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="SERVICE INJECTION"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="11sp"
+                    android:textStyle="bold"
+                    android:letterSpacing="0.1"
+                    android:layout_marginBottom="8dp" />
+
+                <TextView
+                    android:id="@+id/tvServiceStatus"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Accessibility Service: Memeriksa..."
+                    android:textColor="@color/text_primary"
+                    android:textSize="14sp" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Quick Setup Permissions Card -->
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            app:cardCornerRadius="16dp"
+            app:cardBackgroundColor="@color/card_dark"
+            app:strokeColor="@color/card_dark_stroke"
+            app:strokeWidth="1dp"
+            android:layout_marginBottom="20dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="PENGATURAN IZIN SISTEM"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="11sp"
+                    android:textStyle="bold"
+                    android:letterSpacing="0.1"
+                    android:layout_marginBottom="12dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnGrantAccessibility"
+                    android:layout_width="match_parent"
+                    android:layout_height="52dp"
+                    android:text="1. Izinkan Accessibility Service"
+                    android:textColor="@color/text_primary"
+                    app:backgroundTint="#263238"
+                    app:cornerRadius="12dp"
+                    android:layout_marginBottom="10dp"
+                    android:textAllCaps="false" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnGrantOverlay"
+                    android:layout_width="match_parent"
+                    android:layout_height="52dp"
+                    android:text="2. Izinkan Tampil di Atas Aplikasi Lain"
+                    android:textColor="@color/text_primary"
+                    app:backgroundTint="#263238"
+                    app:cornerRadius="12dp"
+                    android:textAllCaps="false" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Advanced Features (Calibration & Zero Latency) -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginBottom="24dp">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnCalibrateHardware"
+                android:layout_width="0dp"
+                android:layout_height="54dp"
+                android:layout_weight="1"
+                android:text="🔧 Kalibrasi Axis"
+                android:textColor="@color/text_primary"
+                app:backgroundTint="#1565C0"
+                app:cornerRadius="12dp"
+                android:layout_marginEnd="6dp"
+                android:textAllCaps="false" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnToggleAdb"
+                android:layout_width="0dp"
+                android:layout_height="54dp"
+                android:layout_weight="1"
+                android:text="⚡ ADB 0ms Delay"
+                android:textColor="@color/text_primary"
+                app:backgroundTint="#37474F"
+                app:cornerRadius="12dp"
+                android:layout_marginStart="6dp"
+                android:textAllCaps="false" />
+        </LinearLayout>
+
+        <!-- Launch Mapper Main CTA Button -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnToggleOverlay"
+            android:layout_width="match_parent"
+            android:layout_height="60dp"
+            android:text="Mulai Keymapper (Buka Overlay)"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:textColor="#000000"
+            app:backgroundTint="@color/primary_accent"
+            app:cornerRadius="14dp"
+            android:textAllCaps="false" />
+
+    </LinearLayout>
+</ScrollView>
