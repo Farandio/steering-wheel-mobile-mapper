@@ -6,7 +6,9 @@ import android.graphics.Path
 import android.os.Build
 import android.util.Log
 import android.view.KeyEvent
-import androidx.annotation.RequiresApi
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 
 /**
  * Service utama untuk menginjeksi event sentuhan (Touch Injection) menggunakan
@@ -23,28 +25,23 @@ class TouchAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
-        Log.i(TAG, "TouchAccessibilityService berhasil terkoneksi & aktif.")
+        Log.i(TAG, "TouchAccessibilityService connected.")
     }
 
     override fun onAccessibilityEvent(event: android.view.accessibility.AccessibilityEvent?) {
-        // Tidak perlu memproses UI tree events aplikasi lain
+        // Jangan intercept atau proses UI tree BUSSID agar game tidak stuck/freeze
     }
 
     override fun onInterrupt() {
-        Log.w(TAG, "TouchAccessibilityService diinterupsi.")
+        Log.w(TAG, "TouchAccessibilityService interrupted.")
     }
 
     override fun onDestroy() {
         super.onDestroy()
         instance = null
-        Log.i(TAG, "TouchAccessibilityService dihentikan.")
     }
 
-    /**
-     * Intersepsi KeyEvent hardware jika service diizinkan menangkap filter key events
-     */
     override fun onKeyEvent(event: KeyEvent): Boolean {
-        // Delegasikan pemrosesan ke MappingManager
         val handled = com.mapper.pxnv9.manager.MappingManager.processKeyEvent(event)
         if (handled) {
             return true
@@ -53,27 +50,23 @@ class TouchAccessibilityService : AccessibilityService() {
     }
 
     // =========================================================================
-    // TOUCH INJECTION PRIMITIVES MENGGUNAKAN ACCESSIBILITY GESTURE
+    // GESTURE & TOUCH INJECTION
     // =========================================================================
 
     /**
-     * 1. Single Tap pada koordinat (X, Y)
+     * 1. Single Tap (Klakson, Lampu, Hazard, dll)
      */
-    fun injectTap(x: Float, y: Float, durationMs: Long = 50L) {
+    fun injectTap(x: Float, y: Float, durationMs: Long = 40L) {
         val path = Path().apply {
             moveTo(x, y)
         }
         val stroke = GestureDescription.StrokeDescription(path, 0, durationMs)
-        val gesture = GestureDescription.Builder()
-            .addStroke(stroke)
-            .build()
-
+        val gesture = GestureDescription.Builder().addStroke(stroke).build()
         dispatchGesture(gesture, null, null)
     }
 
     /**
-     * 2. Continuous / Hold Touch (misal pedal gas/rem ditekan atau dilepas)
-     * Pada Android 8.0+ (API 26), StrokeDescription mendukung parameter willContinue
+     * 2. Continuous / Hold Touch (Pedal Gas / Rem)
      */
     private var activeStrokes = mutableMapOf<String, GestureDescription.StrokeDescription>()
 
@@ -81,17 +74,15 @@ class TouchAccessibilityService : AccessibilityService() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val path = Path().apply {
                 moveTo(x, y)
-                lineTo(x, y) // Hold in-place
+                lineTo(x, y)
             }
 
             if (isDown) {
-                // Mulai gesture hold
                 val stroke = GestureDescription.StrokeDescription(path, 0, 1000L, true)
                 activeStrokes[strokeId] = stroke
                 val gesture = GestureDescription.Builder().addStroke(stroke).build()
                 dispatchGesture(gesture, null, null)
             } else {
-                // Selesaikan/lepaskan gesture
                 val prevStroke = activeStrokes.remove(strokeId)
                 if (prevStroke != null) {
                     val finishStroke = prevStroke.continueStroke(path, 0, 50L, false)
@@ -100,50 +91,64 @@ class TouchAccessibilityService : AccessibilityService() {
                 }
             }
         } else {
-            // Fallback untuk perangkat di bawah Android 8: simulasi tap berdurasi
             if (isDown) {
-                injectTap(x, y, 300L)
+                injectTap(x, y, 200L)
             }
         }
     }
 
     /**
-     * 3. Slider Rotasi / Drag untuk Setir Kemudi
-     * Menggeser touch dari titik tengah ke arah kiri/kanan berdasarkan normalizedRotation (-1.0f .. 1.0f)
+     * 3. Setir Rotasi 900 Derajat (Arc / Circular Drag)
+     * Pada BUSSID, kemudi virtual diputar dengan menyentuh tepi kemudi dan menggesernya secara melingkar (arc).
+     *
+     * @param centerX Pusat setir di layar
+     * @param centerY Pusat setir di layar
+     * @param radius Jari-jari lingkaran setir virtual
+     * @param currentNormAngle Sudut fisik setir saat ini (-1.0f s/d 1.0f)
+     * @param maxDegrees Derajat fisik setir (900f atau 270f)
      */
-    fun injectSteeringSlider(centerX: Float, centerY: Float, radius: Float, normalizedRotation: Float) {
-        // Hitung perpindahan x target
-        val targetX = centerX + (normalizedRotation * radius)
-        val targetY = centerY
+    fun injectCircularSteering(
+        centerX: Float,
+        centerY: Float,
+        radius: Float,
+        fromNorm: Float,
+        toNorm: Float,
+        maxDegrees: Float,
+        sensitivity: Float
+    ) {
+        // Hitung sudut rotasi dalam radian (Setir berpusat di arah atas / 90 derajat atau 270)
+        // Setir 900 derajat = 2.5 putaran penuh (450 derajat ke kiri, 450 derajat ke kanan)
+        val maxRotRadian = (maxDegrees / 2f) * (PI.toFloat() / 180f) * sensitivity
 
-        val path = Path().apply {
-            moveTo(centerX, centerY)
-            lineTo(targetX, targetY)
-        }
+        val startAngle = -PI.toFloat() / 2f + (fromNorm * maxRotRadian)
+        val endAngle = -PI.toFloat() / 2f + (toNorm * maxRotRadian)
 
-        // Jalankan swipe dengan durasi instan (misal 40ms) agar responsif
-        val stroke = GestureDescription.StrokeDescription(path, 0, 40L)
-        val gesture = GestureDescription.Builder()
-            .addStroke(stroke)
-            .build()
+        val startX = centerX + radius * cos(startAngle)
+        val startY = centerY + radius * sin(startAngle)
 
-        dispatchGesture(gesture, null, null)
-    }
+        val endX = centerX + radius * cos(endAngle)
+        val endY = centerY + radius * sin(endAngle)
 
-    /**
-     * 4. H-Shifter Node Dragging (dari tengah ke posisi slot gigi, atau sebaliknya)
-     */
-    fun injectShifterSlide(startX: Float, startY: Float, endX: Float, endY: Float, durationMs: Long = 60L) {
         val path = Path().apply {
             moveTo(startX, startY)
             lineTo(endX, endY)
         }
 
-        val stroke = GestureDescription.StrokeDescription(path, 0, durationMs)
-        val gesture = GestureDescription.Builder()
-            .addStroke(stroke)
-            .build()
+        val stroke = GestureDescription.StrokeDescription(path, 0, 30L)
+        val gesture = GestureDescription.Builder().addStroke(stroke).build()
+        dispatchGesture(gesture, null, null)
+    }
 
+    /**
+     * 4. H-Shifter Node Dragging (Tengah -> Slot Gigi atau sebaliknya)
+     */
+    fun injectShifterSlide(startX: Float, startY: Float, endX: Float, endY: Float, durationMs: Long = 50L) {
+        val path = Path().apply {
+            moveTo(startX, startY)
+            lineTo(endX, endY)
+        }
+        val stroke = GestureDescription.StrokeDescription(path, 0, durationMs)
+        val gesture = GestureDescription.Builder().addStroke(stroke).build()
         dispatchGesture(gesture, null, null)
     }
 }
