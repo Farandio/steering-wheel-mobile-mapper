@@ -170,18 +170,22 @@ class TouchAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Jalur multi-titik untuk perpindahan gigi langsung (misal Gigi 1 -> Gigi 3, Gigi 2 -> Gigi 4):
-     * Titik Asal -> Lorong Netral Asal -> Lorong Netral Target -> Titik Target
+     * Jalur multi-titik untuk perpindahan gigi presisi H-gate:
+     * Menyusuri lorong H lalu menahan sentuhan di slot target (dwell time) agar Unity collider BUSSID mengunci gigi.
      */
-    fun injectMultiPointPath(points: List<Pair<Float, Float>>, durationMs: Long = 80L) {
+    fun injectMultiPointPath(points: List<Pair<Float, Float>>, durationMs: Long = 70L, holdAtEndMs: Long = 60L) {
         if (points.size < 2) return
         val path = Path().apply {
             moveTo(points[0].first, points[0].second)
             for (i in 1 until points.size) {
                 lineTo(points[i].first, points[i].second)
             }
+            // Tahan di titik akhir (micro move di tempat) agar terdeteksi solid oleh sensor slot BUSSID
+            val last = points.last()
+            lineTo(last.first, last.second)
         }
-        val stroke = GestureDescription.StrokeDescription(path, 0, durationMs)
+        val totalDuration = durationMs + holdAtEndMs
+        val stroke = GestureDescription.StrokeDescription(path, 0, totalDuration)
         val gesture = GestureDescription.Builder().addStroke(stroke).build()
         dispatchGesture(gesture, null, null)
     }

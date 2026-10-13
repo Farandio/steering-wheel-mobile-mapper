@@ -401,7 +401,7 @@ object MappingManager {
             return true
         }
 
-        // H-Shifter (Dengan simulasi jalur lorong H-gate BUSSID)
+        // H-Shifter Presisi (BUSSID Live Knob Tracking & Constrained H-Rail)
         val shifterWidget = activeWidgets.firstOrNull { it.type == MappingType.SHIFTER_SLIDER }
         if (shifterWidget != null) {
             val targetGear = mapKeyCodeToGear(keyCode)
@@ -415,52 +415,55 @@ object MappingManager {
                         val prevGear = currentGear
                         currentGear = targetGear
                         onGearChanged?.invoke(targetGear)
-                        context?.let { triggerHapticFeedback(it, 50L) } // Haptic hentakan saat masuk gigi
+                        context?.let { triggerHapticFeedback(it, 50L) }
 
-                        if (prevGear == "N" || prevGear == targetGear) {
-                            service.injectShifterPath(
-                                startX = neutralX,
-                                startY = neutralY,
-                                midX = targetPos.x,
-                                midY = neutralY,
-                                endX = targetPos.x,
-                                endY = targetPos.y,
-                                durationMs = 60L
-                            )
+                        // Tentukan koordinat awal sentuhan (WAJIB tepat di atas bola oranye saat ini)
+                        val startPt = if (prevGear == "N") {
+                            Pair(neutralX, neutralY)
                         } else {
-                            val prevPos = shifterWidget.shifterSlots[prevGear]
-                            if (prevPos != null) {
-                                val waypoints = listOf(
-                                    Pair(prevPos.x, prevPos.y),
-                                    Pair(prevPos.x, neutralY),
-                                    Pair(targetPos.x, neutralY),
-                                    Pair(targetPos.x, targetPos.y)
-                                )
-                                service.injectMultiPointPath(waypoints, durationMs = 85L)
+                            val pos = shifterWidget.shifterSlots[prevGear]
+                            if (pos != null) Pair(pos.x, pos.y) else Pair(neutralX, neutralY)
+                        }
+
+                        // Bangun jalur H-gate terpandu
+                        val waypoints = mutableListOf<Pair<Float, Float>>()
+                        waypoints.add(startPt)
+
+                        if (prevGear == "N") {
+                            // Netral -> Geser ke koridor kolom gigi target -> Dorong ke slot gigi target
+                            waypoints.add(Pair(targetPos.x, neutralY))
+                            waypoints.add(Pair(targetPos.x, targetPos.y))
+                        } else if (prevGear == targetGear) {
+                            // Sudah di gigi yang sama
+                            waypoints.add(Pair(targetPos.x, targetPos.y))
+                        } else {
+                            // Antar Gigi (misal Gigi 1 ke Gigi 2, atau Gigi 1 ke Gigi 3):
+                            val sameColumn = kotlin.math.abs(startPt.first - targetPos.x) < 25f
+                            if (sameColumn) {
+                                // Kolom sama (misal 1 ke 2, 3 ke 4, 5 ke 6): Cukup gerak vertikal lurus lewat tengah
+                                waypoints.add(Pair(startPt.first, neutralY))
+                                waypoints.add(Pair(targetPos.x, targetPos.y))
                             } else {
-                                service.injectShifterPath(
-                                    startX = neutralX,
-                                    startY = neutralY,
-                                    midX = targetPos.x,
-                                    midY = neutralY,
-                                    endX = targetPos.x,
-                                    endY = targetPos.y,
-                                    durationMs = 60L
-                                )
+                                // Beda kolom (misal 1 ke 3, 2 ke 5):
+                                // Tarik keluar dari gigi lama ke koridor netral -> geser horizontal ke kolom baru -> dorong ke slot gigi baru
+                                waypoints.add(Pair(startPt.first, neutralY))
+                                waypoints.add(Pair(targetPos.x, neutralY))
+                                waypoints.add(Pair(targetPos.x, targetPos.y))
                             }
                         }
+
+                        service.injectMultiPointPath(waypoints, durationMs = 80L, holdAtEndMs = 70L)
                     } else if (action == KeyEvent.ACTION_UP && currentGear == targetGear) {
+                        // Tuas fisik dilepas ke Netral
                         currentGear = "N"
                         onGearChanged?.invoke("N")
-                        service.injectShifterPath(
-                            startX = targetPos.x,
-                            startY = targetPos.y,
-                            midX = targetPos.x,
-                            midY = neutralY,
-                            endX = neutralX,
-                            endY = neutralY,
-                            durationMs = 50L
+
+                        val waypoints = listOf(
+                            Pair(targetPos.x, targetPos.y), // Mulai tepat di bola gigi yang aktif
+                            Pair(targetPos.x, neutralY),     // Keluar ke koridor horizontal
+                            Pair(neutralX, neutralY)         // Masuk kembali ke titik tengah (Netral)
                         )
+                        service.injectMultiPointPath(waypoints, durationMs = 65L, holdAtEndMs = 50L)
                     }
                 }
                 return true
