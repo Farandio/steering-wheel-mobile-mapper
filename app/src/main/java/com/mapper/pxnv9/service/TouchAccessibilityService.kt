@@ -157,4 +157,21 @@ class TouchAccessibilityService : AccessibilityService() {
         val gesture = GestureDescription.Builder().addStroke(stroke).build()
         dispatchGesture(gesture, null, null)
     }
+
+    /**
+     * Jalur multi-titik untuk perpindahan gigi langsung (misal Gigi 1 -> Gigi 3, Gigi 2 -> Gigi 4):
+     * Titik Asal -> Lorong Netral Asal -> Lorong Netral Target -> Titik Target
+     */
+    fun injectMultiPointPath(points: List<Pair<Float, Float>>, durationMs: Long = 80L) {
+        if (points.size < 2) return
+        val path = Path().apply {
+            moveTo(points[0].first, points[0].second)
+            for (i in 1 until points.size) {
+                lineTo(points[i].first, points[i].second)
+            }
+        }
+        val stroke = GestureDescription.StrokeDescription(path, 0, durationMs)
+        val gesture = GestureDescription.Builder().addStroke(stroke).build()
+        dispatchGesture(gesture, null, null)
+    }
 }

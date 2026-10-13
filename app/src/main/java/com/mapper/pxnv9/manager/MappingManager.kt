@@ -305,19 +305,49 @@ object MappingManager {
 
                 if (targetPos != null) {
                     if (action == KeyEvent.ACTION_DOWN) {
+                        val prevGear = currentGear
                         currentGear = targetGear
-                        // Gerakan siku (H-gate): Netral -> Geser Horizontal sejajar kolom gigi target -> Dorong Vertikal ke gigi target
-                        service.injectShifterPath(
-                            startX = neutralX,
-                            startY = neutralY,
-                            midX = targetPos.x,
-                            midY = neutralY,
-                            endX = targetPos.x,
-                            endY = targetPos.y,
-                            durationMs = 60L
-                        )
+
+                        if (prevGear == "N" || prevGear == targetGear) {
+                            // Dari Netral -> Masuk ke Gigi Target
+                            service.injectShifterPath(
+                                startX = neutralX,
+                                startY = neutralY,
+                                midX = targetPos.x,
+                                midY = neutralY,
+                                endX = targetPos.x,
+                                endY = targetPos.y,
+                                durationMs = 60L
+                            )
+                        } else {
+                            // Pindah Langsung Antar Gigi (Contoh: Gigi 1 -> Gigi 3, Gigi 2 -> Gigi 5):
+                            // 1. Dari slot gigi sebelumnya -> Lorong tengah kolom sebelumnya
+                            // 2. Geser horizontal di koridor tengah -> Lorong kolom target
+                            // 3. Masuk vertikal -> Slot gigi target
+                            val prevPos = shifterWidget.shifterSlots[prevGear]
+                            if (prevPos != null) {
+                                val waypoints = listOf(
+                                    Pair(prevPos.x, prevPos.y),         // Mulai di gigi sebelumnya (misal Gigi 1)
+                                    Pair(prevPos.x, neutralY),           // Turun ke koridor tengah
+                                    Pair(targetPos.x, neutralY),         // Geser ke kolom target (misal kolom 3/4)
+                                    Pair(targetPos.x, targetPos.y)       // Masuk ke gigi target (misal Gigi 3)
+                                )
+                                service.injectMultiPointPath(waypoints, durationMs = 85L)
+                            } else {
+                                // Fallback jika posisi lama tidak ada
+                                service.injectShifterPath(
+                                    startX = neutralX,
+                                    startY = neutralY,
+                                    midX = targetPos.x,
+                                    midY = neutralY,
+                                    endX = targetPos.x,
+                                    endY = targetPos.y,
+                                    durationMs = 60L
+                                )
+                            }
+                        }
                     } else if (action == KeyEvent.ACTION_UP && currentGear == targetGear) {
-                        // Kembali ke Netral
+                        // Kembali ke Netral (Tuas fisik dilepas ke N)
                         currentGear = "N"
                         service.injectShifterPath(
                             startX = targetPos.x,
