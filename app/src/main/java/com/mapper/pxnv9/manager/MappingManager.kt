@@ -414,13 +414,13 @@ object MappingManager {
                                 Pair(startX, neutralY),
                                 Pair(neutralX, neutralY)
                             )
-                            service.injectMultiPointPath(waypoints, durationMs = 60L, holdAtEndMs = 50L)
+                            service.injectMultiPointPath(waypoints, durationMs = 50L, holdAtEndMs = 40L)
                             currentGear = "N"
                             onGearChanged?.invoke("N (Kopling)")
                             context?.let { triggerHapticFeedback(it, 30L) }
                         }
                     } else {
-                        // Pedal kopling dilepas: Jika tuas fisik masih berada di suatu gigi, sambungkan kembali
+                        // Pedal kopling dilepas: Sambungkan kembali gigi fisik jika tuas sedang berada di suatu gigi
                         val physicalSlot = lastGearBeforeClutch
                         if (physicalSlot != null && physicalSlot != "N") {
                             val targetPos = shifterWidget.shifterSlots[physicalSlot]
@@ -434,7 +434,7 @@ object MappingManager {
                                     Pair(targetPos.x, neutralY),
                                     Pair(targetPos.x, targetPos.y)
                                 )
-                                service.injectMultiPointPath(waypoints, durationMs = 60L, holdAtEndMs = 60L)
+                                service.injectMultiPointPath(waypoints, durationMs = 50L, holdAtEndMs = 60L)
                             }
                         }
                     }
@@ -503,8 +503,10 @@ object MappingManager {
                         onGearChanged?.invoke(targetGear)
                         context?.let { triggerHapticFeedback(it, 50L) }
 
-                        // Tentukan koordinat awal sentuhan (WAJIB tepat di atas bola oranye saat ini)
-                        val startPt = if (prevGear == "N") {
+                        // Tentukan koordinat awal sentuhan:
+                        // Jika kopling sedang diinjak, bola tuas game saat ini ada di Netral (N).
+                        // Jika tidak ada kopling dan pindah langsung (misal 5 ke 2), mulai dari posisi gigi lama.
+                        val startPt = if (prevGear == "N" || isClutchDepressed) {
                             Pair(neutralX, neutralY)
                         } else {
                             val pos = shifterWidget.shifterSlots[prevGear]
@@ -515,22 +517,22 @@ object MappingManager {
                         val waypoints = mutableListOf<Pair<Float, Float>>()
                         waypoints.add(startPt)
 
-                        if (prevGear == "N") {
-                            // Netral -> Geser ke koridor kolom gigi target -> Dorong ke slot gigi target
+                        if (startPt.first == neutralX && startPt.second == neutralY) {
+                            // Dari Netral -> Geser ke koridor kolom gigi target -> Dorong ke slot gigi target
                             waypoints.add(Pair(targetPos.x, neutralY))
                             waypoints.add(Pair(targetPos.x, targetPos.y))
                         } else if (prevGear == targetGear) {
                             // Sudah di gigi yang sama
                             waypoints.add(Pair(targetPos.x, targetPos.y))
                         } else {
-                            // Antar Gigi (misal Gigi 1 ke Gigi 2, atau Gigi 1 ke Gigi 3):
+                            // Antar Gigi Acak (misal Gigi 5 ke 2, Gigi 6 ke 3, Gigi 4 ke R):
                             val sameColumn = kotlin.math.abs(startPt.first - targetPos.x) < 25f
                             if (sameColumn) {
-                                // Kolom sama (misal 1 ke 2, 3 ke 4, 5 ke 6): Cukup gerak vertikal lurus lewat tengah
+                                // Kolom sama (misal 1 ke 2, 3 ke 4, 5 ke 6): Gerak vertikal lurus lewat tengah
                                 waypoints.add(Pair(startPt.first, neutralY))
                                 waypoints.add(Pair(targetPos.x, targetPos.y))
                             } else {
-                                // Beda kolom (misal 1 ke 3, 2 ke 5):
+                                // Beda kolom acak (misal 5 ke 2, 6 ke 3, 4 ke R, 1 ke 5):
                                 // Tarik keluar dari gigi lama ke koridor netral -> geser horizontal ke kolom baru -> dorong ke slot gigi baru
                                 waypoints.add(Pair(startPt.first, neutralY))
                                 waypoints.add(Pair(targetPos.x, neutralY))
@@ -538,19 +540,22 @@ object MappingManager {
                             }
                         }
 
-                        service.injectMultiPointPath(waypoints, durationMs = 80L, holdAtEndMs = 70L)
-                    } else if (action == KeyEvent.ACTION_UP && currentGear == targetGear) {
+                        service.injectMultiPointPath(waypoints, durationMs = 70L, holdAtEndMs = 60L)
+                    } else if (action == KeyEvent.ACTION_UP && lastGearBeforeClutch == targetGear) {
                         // Tuas fisik dilepas ke Netral
-                        currentGear = "N"
                         lastGearBeforeClutch = null
-                        onGearChanged?.invoke("N")
 
-                        val waypoints = listOf(
-                            Pair(targetPos.x, targetPos.y), // Mulai tepat di bola gigi yang aktif
-                            Pair(targetPos.x, neutralY),     // Keluar ke koridor horizontal
-                            Pair(neutralX, neutralY)         // Masuk kembali ke titik tengah (Netral)
-                        )
-                        service.injectMultiPointPath(waypoints, durationMs = 65L, holdAtEndMs = 50L)
+                        if (currentGear != "N") {
+                            currentGear = "N"
+                            onGearChanged?.invoke("N")
+
+                            val waypoints = listOf(
+                                Pair(targetPos.x, targetPos.y), // Mulai tepat di bola gigi yang aktif
+                                Pair(targetPos.x, neutralY),     // Keluar ke koridor horizontal
+                                Pair(neutralX, neutralY)         // Masuk kembali ke titik tengah (Netral)
+                            )
+                            service.injectMultiPointPath(waypoints, durationMs = 50L, holdAtEndMs = 40L)
+                        }
                     }
                 }
                 return true
