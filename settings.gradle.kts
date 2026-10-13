@@ -14,4 +14,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "SteeringWheelMapper"
-include ':app'
+include(":app")
