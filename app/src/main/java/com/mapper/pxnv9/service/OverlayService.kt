@@ -62,14 +62,18 @@ class OverlayService : Service() {
     private fun setupMotionInterceptor() {
         if (motionInterceptorView != null) return
 
-        // Gunakan FLAG_NOT_FOCUSABLE agar window TIDAK merebut fokus rendering Unity BUSSID (mencegah game stuck putih/freeze).
-        // View tetap dipasang transparan untuk mendengarkan event yang diteruskan.
+        // Ukuran MATCH_PARENT dengan FLAG_NOT_FOCUSABLE | FLAG_NOT_TOUCH_MODAL | FLAG_LAYOUT_NO_LIMITS:
+        // Standar arsitektur game keymapper (Mantis/Panda):
+        // 1. Mencegah game stuck putih (karena FLAG_NOT_FOCUSABLE aktif, SurfaceView Unity tetap memegang fokus rendering grafis).
+        // 2. Sentuhan jari user di layar tetap diteruskan 100% ke game (karena FLAG_NOT_TOUCH_MODAL aktif).
+        // 3. View overlay menerima sinyal hardware joystick (onGenericMotionEvent) dari setir & 3 pedal OTG secara live.
         val interceptorParams = WindowManager.LayoutParams(
-            1,
-            1,
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
             getOverlayWindowType(),
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-            WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSPARENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
