@@ -1,0 +1,171 @@
+{
+    "calib": {
+        "steer": {
+            "axis": "X",
+            "center": 32767,
+            "min": 0,
+            "max": 65535,
+            "deadzone": 0,
+            "left_key": "a",
+            "right_key": "d",
+            "enable_keys": true,
+            "invert": false
+        },
+        "gas": {
+            "axis": "Z",
+            "rest": 0,
+            "pressed": 30779,
+            "threshold": 0.15,
+            "key": "w",
+            "enabled": true,
+            "click_pos": [
+                1700,
+                900
+            ]
+        },
+        "brake": {
+            "axis": "R",
+            "rest": 0,
+            "pressed": 15267,
+            "threshold": 0.15,
+            "key": "s",
+            "enabled": true,
+            "click_pos": [
+                1500,
+                900
+            ]
+        },
+        "clutch": {
+            "axis": "U",
+            "rest": 0,
+            "pressed": 19947,
+            "threshold": 0.15,
+            "key": "shift",
+            "enabled": true,
+            "click_pos": [
+                1300,
+                900
+            ]
+        }
+    },
+    "steer_config": {
+        "center_x": 300,
+        "center_y": 856,
+        "radius": 168,
+        "max_angle": 360,
+        "show_overlay": true,
+        "x": 220,
+        "y": 680,
+        "diameter": 320,
+        "active_touch": true,
+        "show_crosshair": true,
+        "clickthrough": true
+    },
+    "shifter_config": {
+        "center_x": 1752,
+        "center_y": 704,
+        "y_top": 659,
+        "y_bottom": 754,
+        "x_col_R": 1567,
+        "x_col_1_2": 1662,
+        "x_col_3_4": 1752,
+        "x_col_5_6": 1842,
+        "slots": {
+            "gear_1": {
+                "btn": "16",
+                "name": "Gigi 1"
+            },
+            "gear_2": {
+                "btn": "17",
+                "name": "Gigi 2"
+            },
+            "gear_3": {
+                "btn": "18",
+                "name": "Gigi 3"
+            },
+            "gear_4": {
+                "btn": "19",
+                "name": "Gigi 4"
+            },
+            "gear_5": {
+                "btn": "20",
+                "name": "Gigi 5"
+            },
+            "gear_6": {
+                "btn": "21",
+                "name": "Gigi 6"
+            },
+            "gear_r": {
+                "btn": "22",
+                "name": "Gigi R (Mundur)"
+            }
+        }
+    },
+    "mappings": {
+        "btn_4": {
+            "name": "pimtu",
+            "type": "key",
+            "target": "t"
+        },
+        "btn_15": {
+            "name": "on",
+            "type": "key",
+            "target": "o"
+        },
+        "btn_0": {
+            "name": "horn",
+            "type": "key",
+            "target": "h"
+        },
+        "btn_3": {
+            "name": "cam",
+            "type": "key",
+            "target": "c"
+        },
+        "btn_6": {
+            "name": "icon",
+            "type": "key",
+            "target": "v"
+        },
+        "btn_23": {
+            "name": "hand",
+            "type": "key",
+            "target": "b"
+        },
+        "btn_2": {
+            "name": "kiri",
+            "type": "key",
+            "target": "1"
+        },
+        "btn_1": {
+            "name": "kanan",
+            "type": "key",
+            "target": "2"
+        },
+        "btn_5": {
+            "name": "hazard",
+            "type": "key",
+            "target": "3"
+        },
+        "btn_7": {
+            "name": "lamp",
+            "type": "key",
+            "target": "4"
+        },
+        "btn_14": {
+            "name": "dim",
+            "type": "key",
+            "target": "5"
+        },
+        "btn_11": {
+            "name": "strobo",
+            "type": "key",
+            "target": "6"
+        },
+        "btn_10": {
+            "name": "telolet",
+            "type": "key",
+            "target": "f2"
+        }
+    }
+}

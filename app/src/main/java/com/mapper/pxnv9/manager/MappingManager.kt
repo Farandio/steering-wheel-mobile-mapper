@@ -55,75 +55,81 @@ object MappingManager {
     fun setupDefaultBussidProfile() {
         activeWidgets.clear()
 
-        // 1. Steering Wheel 900 Derajat (Kiri Bawah BUSSID) - Lingkar luar
+        // 1. Steering Wheel BUSSID (Koordinat terkalibrasi dari PC: X=300, Y=856, Radius=168)
         activeWidgets.add(
             MappingWidget(
                 id = "wheel_steering",
-                name = "Setir Kemudi (900°)",
+                name = "Setir Kemudi BUSSID",
                 type = MappingType.STEERING_WHEEL,
-                centerPoint = PointF(360f, 820f),
-                width = 440f,
-                height = 440f,
-                steeringRadius = 190f,
+                centerPoint = PointF(300f, 856f),
+                width = 400f,
+                height = 400f,
+                steeringRadius = 168f,
                 steeringDegrees = 900f,
                 steeringSensitivity = 1.0f,
-                deadzone = 0.03f,
+                deadzone = 0.02f,
                 boundAxis = MotionEvent.AXIS_X
             )
         )
 
-        // 2. Klakson di Tengah Setir (Titik pusat setir BUSSID berlogo)
-        activeWidgets.add(
-            MappingWidget(
-                id = "btn_horn",
-                name = "Klakson (Tengah Setir)",
-                type = MappingType.TAP,
-                centerPoint = PointF(360f, 820f),
-                width = 120f,
-                height = 120f,
-                boundKeyCode = KeyEvent.KEYCODE_BUTTON_A,
-                boundKeyName = "Button A"
-            )
-        )
-
-        // 3. H-Shifter (Kanan Tengah BUSSID)
+        // 2. H-Shifter 6-Speed + Reverse (Terkalibrasi dari PC: Center=1752, 704)
         val shifter = MappingWidget(
             id = "h_shifter",
-            name = "H-Shifter 6-Speed",
+            name = "H-Shifter BUSSID",
             type = MappingType.SHIFTER_SLIDER,
-            centerPoint = PointF(2160f, 650f),
-            width = 320f,
-            height = 240f
+            centerPoint = PointF(1752f, 704f),
+            width = 340f,
+            height = 180f,
+            requireClutchToShift = false // Fleksibel: dapat ganti gigi langsung saat belok
         )
-        shifter.shifterSlots["R"] = PointF(2020f, 730f)
-        shifter.shifterSlots["1"] = PointF(2100f, 570f)
-        shifter.shifterSlots["2"] = PointF(2100f, 730f)
-        shifter.shifterSlots["3"] = PointF(2180f, 570f)
-        shifter.shifterSlots["4"] = PointF(2180f, 730f)
-        shifter.shifterSlots["5"] = PointF(2260f, 570f)
-        shifter.shifterSlots["6"] = PointF(2260f, 730f)
+        // Koordinat slot gigi nyata dari kalibrasi PC
+        shifter.shifterSlots["R"] = PointF(1567f, 754f)
+        shifter.shifterSlots["1"] = PointF(1662f, 659f)
+        shifter.shifterSlots["2"] = PointF(1662f, 754f)
+        shifter.shifterSlots["3"] = PointF(1752f, 659f)
+        shifter.shifterSlots["4"] = PointF(1752f, 754f)
+        shifter.shifterSlots["5"] = PointF(1842f, 659f)
+        shifter.shifterSlots["6"] = PointF(1842f, 754f)
+
+        // Binding scanCode/keyCode tombol fisik shifter (Button 16-22 dari setir fisik)
+        shifter.gearScanCodeBindings["1"] = 16
+        shifter.gearScanCodeBindings["2"] = 17
+        shifter.gearScanCodeBindings["3"] = 18
+        shifter.gearScanCodeBindings["4"] = 19
+        shifter.gearScanCodeBindings["5"] = 20
+        shifter.gearScanCodeBindings["6"] = 21
+        shifter.gearScanCodeBindings["R"] = 22
+
+        shifter.gearKeyBindings["1"] = KeyEvent.KEYCODE_BUTTON_1
+        shifter.gearKeyBindings["2"] = KeyEvent.KEYCODE_BUTTON_2
+        shifter.gearKeyBindings["3"] = KeyEvent.KEYCODE_BUTTON_3
+        shifter.gearKeyBindings["4"] = KeyEvent.KEYCODE_BUTTON_4
+        shifter.gearKeyBindings["5"] = KeyEvent.KEYCODE_BUTTON_5
+        shifter.gearKeyBindings["6"] = KeyEvent.KEYCODE_BUTTON_6
+        shifter.gearKeyBindings["R"] = KeyEvent.KEYCODE_BUTTON_7
         activeWidgets.add(shifter)
 
-        // 4. Pedal Gas & Rem (Kanan Bawah)
+        // 3. Pedal Gas (Pedal Kanan - Tombol 'W' di PC)
         activeWidgets.add(
             MappingWidget(
                 id = "pedal_gas",
                 name = "Pedal Gas",
                 type = MappingType.PEDAL_ANALOG,
-                centerPoint = PointF(2280f, 870f),
+                centerPoint = PointF(1700f, 900f),
                 width = 140f,
                 height = 200f,
-                pedalTravelDistance = 160f,
+                pedalTravelDistance = 140f,
                 boundAxis = MotionEvent.AXIS_GAS
             )
         )
 
+        // 4. Pedal Rem (Pedal Tengah - Tombol 'S' di PC)
         activeWidgets.add(
             MappingWidget(
                 id = "pedal_brake",
                 name = "Pedal Rem",
                 type = MappingType.PEDAL_ANALOG,
-                centerPoint = PointF(2050f, 890f),
+                centerPoint = PointF(1500f, 900f),
                 width = 140f,
                 height = 180f,
                 pedalTravelDistance = 140f,
@@ -131,12 +137,13 @@ object MappingManager {
             )
         )
 
+        // 5. Pedal Kopling (Pedal Kiri - Shift di PC)
         activeWidgets.add(
             MappingWidget(
                 id = "pedal_clutch",
                 name = "Pedal Kopling",
                 type = MappingType.PEDAL_ANALOG,
-                centerPoint = PointF(1850f, 890f),
+                centerPoint = PointF(1300f, 900f),
                 width = 140f,
                 height = 180f,
                 pedalTravelDistance = 140f,
@@ -144,17 +151,142 @@ object MappingManager {
             )
         )
 
-        // 5. Tombol Aksi Umum (Lampu Hazard)
+        // 6. Tombol Fisik dari Konfigurasi PC:
+        // Klakson (Button 0)
+        activeWidgets.add(
+            MappingWidget(
+                id = "btn_horn",
+                name = "Klakson",
+                type = MappingType.TAP,
+                centerPoint = PointF(300f, 856f),
+                width = 100f,
+                height = 100f,
+                boundScanCode = 0,
+                boundKeyCode = KeyEvent.KEYCODE_BUTTON_A,
+                boundKeyName = "Horn (Button 0)"
+            )
+        )
+
+        // Pintu (Button 4)
+        activeWidgets.add(
+            MappingWidget(
+                id = "btn_door",
+                name = "Buka Pintu",
+                type = MappingType.TAP,
+                centerPoint = PointF(1850f, 200f),
+                width = 80f,
+                height = 80f,
+                boundScanCode = 4,
+                boundKeyCode = KeyEvent.KEYCODE_BUTTON_Y,
+                boundKeyName = "Pintu (Button 4)"
+            )
+        )
+
+        // Handbrake (Button 23)
+        activeWidgets.add(
+            MappingWidget(
+                id = "btn_handbrake",
+                name = "Handbrake",
+                type = MappingType.TAP,
+                centerPoint = PointF(1850f, 500f),
+                width = 90f,
+                height = 90f,
+                boundScanCode = 23,
+                boundKeyName = "Handbrake (Button 23)"
+            )
+        )
+
+        // Lampu Hazard (Button 5)
         activeWidgets.add(
             MappingWidget(
                 id = "btn_hazard",
                 name = "Lampu Hazard",
                 type = MappingType.TAP,
-                centerPoint = PointF(180f, 380f),
-                width = 90f,
-                height = 90f,
-                boundKeyCode = KeyEvent.KEYCODE_BUTTON_Y,
-                boundKeyName = "Button Y"
+                centerPoint = PointF(200f, 380f),
+                width = 80f,
+                height = 80f,
+                boundScanCode = 5,
+                boundKeyName = "Hazard (Button 5)"
+            )
+        )
+
+        // Sein Kiri (Button 2) & Sein Kanan (Button 1)
+        activeWidgets.add(
+            MappingWidget(
+                id = "btn_sein_kiri",
+                name = "Sein Kiri",
+                type = MappingType.TAP,
+                centerPoint = PointF(120f, 600f),
+                width = 80f,
+                height = 80f,
+                boundScanCode = 2,
+                boundKeyName = "Sein Kiri (Button 2)"
+            )
+        )
+        activeWidgets.add(
+            MappingWidget(
+                id = "btn_sein_kanan",
+                name = "Sein Kanan",
+                type = MappingType.TAP,
+                centerPoint = PointF(220f, 600f),
+                width = 80f,
+                height = 80f,
+                boundScanCode = 1,
+                boundKeyName = "Sein Kanan (Button 1)"
+            )
+        )
+
+        // Kamera (Button 3)
+        activeWidgets.add(
+            MappingWidget(
+                id = "btn_cam",
+                name = "Ganti Kamera",
+                type = MappingType.TAP,
+                centerPoint = PointF(100f, 100f),
+                width = 80f,
+                height = 80f,
+                boundScanCode = 3,
+                boundKeyName = "Kamera (Button 3)"
+            )
+        )
+
+        // Lampu Utama (Button 7) & Dim (Button 14)
+        activeWidgets.add(
+            MappingWidget(
+                id = "btn_lampu",
+                name = "Lampu Utama",
+                type = MappingType.TAP,
+                centerPoint = PointF(280f, 380f),
+                width = 80f,
+                height = 80f,
+                boundScanCode = 7,
+                boundKeyName = "Lampu (Button 7)"
+            )
+        )
+        activeWidgets.add(
+            MappingWidget(
+                id = "btn_dim",
+                name = "Lampu Dim",
+                type = MappingType.TAP,
+                centerPoint = PointF(360f, 380f),
+                width = 80f,
+                height = 80f,
+                boundScanCode = 14,
+                boundKeyName = "Dim (Button 14)"
+            )
+        )
+
+        // Telolet / Basuri (Button 10)
+        activeWidgets.add(
+            MappingWidget(
+                id = "btn_telolet",
+                name = "Telolet",
+                type = MappingType.TAP,
+                centerPoint = PointF(450f, 380f),
+                width = 80f,
+                height = 80f,
+                boundScanCode = 10,
+                boundKeyName = "Telolet (Button 10)"
             )
         )
     }
