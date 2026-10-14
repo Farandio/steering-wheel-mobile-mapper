@@ -6,4 +6,5 @@
     android:accessibilityFlags="flagRequestFilterKeyEvents"
     android:canPerformGestures="true"
     android:canRequestFilterKeyEvents="true"
+    android:motionEventSources="sourceJoystick|sourceGamepad"
     android:notificationTimeout="100" />

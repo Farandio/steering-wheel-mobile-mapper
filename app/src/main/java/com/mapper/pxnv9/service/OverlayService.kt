@@ -14,7 +14,6 @@ import android.os.IBinder
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
-import android.view.ViewTreeObserver
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.FrameLayout
@@ -56,30 +55,27 @@ class OverlayService : Service() {
     }
 
     /**
-     * Window transparan khusus di background untuk menangkap GenericMotionEvents (Axis analog setir & 3 pedal).
+     * Window interceptor untuk hardware key events dari overlay (tombol shifter, klakson, dll).
      *
-     * STRATEGI:
-     * - Gunakan FLAG_NOT_TOUCH_MODAL (bukan FLAG_NOT_TOUCHABLE) agar hardware joystick/wheel OTG events
-     *   tetap dikirim ke View ini via onGenericMotionEvent.
-     * - FLAG_NOT_TOUCHABLE memblokir SEMUA input termasuk joystick, sehingga setir/pedal tidak bekerja.
-     * - Sentuhan jari diteruskan ke game BUSSID menggunakan ViewTreeObserver.InternalInsetsInfo:
-     *   touchableRegion diset kosong (TOUCHABLE_INSETS_REGION + setEmpty) → OS menganggap tidak ada
-     *   area sentuh di window ini → semua sentuhan jari jatuh ke window di bawahnya (BUSSID).
-     * - Hardware joystick events (SOURCE_JOYSTICK) tidak melewati mekanisme touchable region,
-     *   sehingga tetap dikirim ke View ini meski touchableRegion kosong.
+     * Catatan arsitektur:
+     * - Hardware joystick/wheel OTG events (setir, gas, rem, kopling) TIDAK lagi ditangkap di sini.
+     *   Sekarang diterima langsung oleh TouchAccessibilityService.onMotionEvent() via motionEventSources
+     *   yang dikonfigurasi di accessibility_service_config.xml (API 34+) dan setServiceInfo() (API 26-33).
+     * - View ini dibuat kecil (1x1) dengan FLAG_NOT_TOUCHABLE agar tidak menghalangi layar game
+     *   maupun sentuhan jari pengguna sama sekali.
+     * - setOnGenericMotionListener tetap ada sebagai fallback jika accessibility service belum terhubung.
      */
     private fun setupMotionInterceptor() {
         if (motionInterceptorView != null) return
 
-        // FLAG_NOT_TOUCH_MODAL: window ada di input dispatch chain (joystick/wheel events masuk),
-        // FLAG_NOT_FOCUSABLE: tidak mencuri keyboard focus dari BUSSID (game tidak freeze).
-        // Sentuhan jari akan diteruskan via InternalInsetsInfo di bawah.
+        // 1x1 pixel + FLAG_NOT_TOUCHABLE: tidak menghalangi sentuhan jari di game BUSSID.
+        // Joystick events sekarang masuk via TouchAccessibilityService.onMotionEvent().
         val interceptorParams = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.MATCH_PARENT,
+            1,
+            1,
             getOverlayWindowType(),
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+            WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
             WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSPARENT
         ).apply {
@@ -91,27 +87,10 @@ class OverlayService : Service() {
         motionInterceptorView = View(this).apply {
             setBackgroundColor(Color.TRANSPARENT)
 
-            // Terima events joystick/wheel OTG dari hardware
+            // Fallback: tangkap joystick events jika accessibility service belum aktif
             setOnGenericMotionListener { _, event ->
                 MappingManager.processMotionEvent(event, this@OverlayService)
             }
-            setOnKeyListener { _, _, event ->
-                MappingManager.processKeyEvent(event, this@OverlayService)
-            }
-
-            // Pasang InternalInsetsListener saat View sudah attached ke window:
-            // Mengosongkan touchableRegion agar semua sentuhan jari (touch events) diteruskan
-            // ke game BUSSID di bawah — sama seperti FLAG_NOT_TOUCHABLE untuk sentuhan,
-            // tapi TANPA memblokir hardware joystick/gamepad motion events.
-            addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
-                override fun onViewAttachedToWindow(v: View) {
-                    v.viewTreeObserver.addOnComputeInternalInsetsListener { insets ->
-                        insets.touchableRegion.setEmpty()
-                        insets.setTouchableInsets(ViewTreeObserver.InternalInsetsInfo.TOUCHABLE_INSETS_REGION)
-                    }
-                }
-                override fun onViewDetachedFromWindow(v: View) { /* tidak perlu cleanup */ }
-            })
         }
 
         try {

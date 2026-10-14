@@ -1,11 +1,15 @@
 package com.mapper.pxnv9.service
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.accessibilityservice.GestureDescription
 import android.graphics.Path
 import android.os.Build
 import android.util.Log
+import android.view.InputDevice
 import android.view.KeyEvent
+import android.view.MotionEvent
+import com.mapper.pxnv9.manager.MappingManager
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
@@ -13,6 +17,9 @@ import kotlin.math.sin
 /**
  * Service utama untuk menginjeksi event sentuhan (Touch Injection) menggunakan
  * AccessibilityService.dispatchGesture API tanpa perlu Root.
+ *
+ * Menerima hardware joystick/wheel OTG events via onMotionEvent() (public API sejak API 26),
+ * sehingga tidak perlu overlay window interceptor untuk menangkap axis setir & pedal.
  */
 class TouchAccessibilityService : AccessibilityService() {
 
@@ -26,6 +33,26 @@ class TouchAccessibilityService : AccessibilityService() {
         super.onServiceConnected()
         instance = this
         Log.i(TAG, "TouchAccessibilityService connected.")
+
+        // Daftarkan SOURCE_JOYSTICK | SOURCE_GAMEPAD agar onMotionEvent() dipanggil
+        // saat setir / pedal OTG bergerak.
+        // API 34+ (UPSIDE_DOWN_CAKE): field motionEventSources tersedia di public API.
+        // API 26-33: field belum ada di public SDK, gunakan refleksi agar tetap compile.
+        try {
+            val info = serviceInfo ?: AccessibilityServiceInfo()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                // API 34+: akses langsung
+                info.motionEventSources = InputDevice.SOURCE_JOYSTICK or InputDevice.SOURCE_GAMEPAD
+            } else {
+                // API 26-33: set via refleksi (field ada di runtime tapi belum di public API)
+                val field = info.javaClass.getDeclaredField("motionEventSources")
+                field.isAccessible = true
+                field.setInt(info, InputDevice.SOURCE_JOYSTICK or InputDevice.SOURCE_GAMEPAD)
+            }
+            serviceInfo = info
+        } catch (e: Exception) {
+            Log.w(TAG, "Tidak dapat set motionEventSources: ${e.message}")
+        }
     }
 
     override fun onAccessibilityEvent(event: android.view.accessibility.AccessibilityEvent?) {
@@ -41,8 +68,17 @@ class TouchAccessibilityService : AccessibilityService() {
         instance = null
     }
 
+    /**
+     * Menerima hardware motion events (setir, gas, rem, kopling) langsung dari OTG device.
+     * onMotionEvent() adalah public API sejak API 26 — tidak butuh overlay window interceptor.
+     * Dipanggil oleh OS untuk SOURCE_JOYSTICK | SOURCE_GAMEPAD yang sudah diset di motionEventSources.
+     */
+    override fun onMotionEvent(event: MotionEvent) {
+        MappingManager.processMotionEvent(event, this)
+    }
+
     override fun onKeyEvent(event: KeyEvent): Boolean {
-        val handled = com.mapper.pxnv9.manager.MappingManager.processKeyEvent(event)
+        val handled = MappingManager.processKeyEvent(event)
         if (handled) {
             return true
         }
