@@ -120,15 +120,22 @@ class MainActivity : AppCompatActivity() {
                 android.view.MotionEvent.AXIS_X,
                 android.view.MotionEvent.AXIS_Y,
                 android.view.MotionEvent.AXIS_Z,
+                android.view.MotionEvent.AXIS_RX,
+                android.view.MotionEvent.AXIS_RY,
                 android.view.MotionEvent.AXIS_RZ,
                 android.view.MotionEvent.AXIS_GAS,
                 android.view.MotionEvent.AXIS_BRAKE,
                 android.view.MotionEvent.AXIS_RTRIGGER,
-                android.view.MotionEvent.AXIS_LTRIGGER
+                android.view.MotionEvent.AXIS_LTRIGGER,
+                android.view.MotionEvent.AXIS_THROTTLE,
+                android.view.MotionEvent.AXIS_RUDDER,
+                android.view.MotionEvent.AXIS_WHEEL,
+                android.view.MotionEvent.AXIS_HAT_X,
+                android.view.MotionEvent.AXIS_HAT_Y
             )
             for (axis in axes) {
                 val value = event.getAxisValue(axis)
-                if (kotlin.math.abs(value) > 0.15f) {
+                if (kotlin.math.abs(value) > 0.08f) {
                     val name = android.view.MotionEvent.axisToString(axis).removePrefix("AXIS_")
                     listener(axis, name, value)
                     break
@@ -137,6 +144,15 @@ class MainActivity : AppCompatActivity() {
             return true
         }
         return super.onGenericMotionEvent(event)
+    }
+
+    override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent): Boolean {
+        calibrationListener?.let { listener ->
+            val name = android.view.KeyEvent.keyCodeToString(keyCode).removePrefix("KEYCODE_")
+            listener(-keyCode, "BUTTON: $name (Scan: ${event.scanCode})", 1.0f)
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
     }
 
     private fun showAdbWirelessDialog() {
