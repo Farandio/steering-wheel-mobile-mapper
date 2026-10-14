@@ -139,6 +139,7 @@ class OverlayService : Service() {
             setTextColor(Color.YELLOW)
             textSize = 13f
         }
+        pillLayout.addView(tvTitle)
         pillLayout.addView(tvLiveHud)
 
         // Helper untuk format teks HUD
@@ -702,14 +703,29 @@ class OverlayService : Service() {
                 addView(tvKey)
 
                 val btnListenKey = Button(this@OverlayService).apply {
-                    text = "🎮 Tekan Tombol di Setir..."
+                    text = "🎮 Tekan Tombol di Setir / Injak Pedal..."
                     setOnClickListener {
-                        text = "⏳ Mendengarkan input tombol PXN..."
+                        text = "⏳ Tekan tombol atau injak pedal gas/rem..."
                         MappingManager.keyListenCallback = { keyCode, scanCode, keyName ->
                             widget.boundKeyCode = keyCode
                             widget.boundScanCode = scanCode
                             widget.boundKeyName = keyName
+                            widget.boundAxis = -1
+                            MappingManager.axisListenCallback = null
+                            tvKey.text = "Tombol Terikat: $keyName"
+                            text = "✅ Terikat: $keyName"
                             Toast.makeText(this@OverlayService, "Tombol Terikat: $keyName", Toast.LENGTH_SHORT).show()
+                            editorOverlayView?.let { refreshWidgetViews(it) }
+                        }
+                        MappingManager.axisListenCallback = { axisId, axisName ->
+                            widget.boundAxis = axisId
+                            widget.boundKeyName = "Pedal Axis: $axisName"
+                            widget.boundKeyCode = -1
+                            widget.boundScanCode = -1
+                            MappingManager.keyListenCallback = null
+                            tvKey.text = "Pedal Terikat: $axisName"
+                            text = "✅ Terikat: Pedal $axisName"
+                            Toast.makeText(this@OverlayService, "Pedal Terikat ke Axis $axisName", Toast.LENGTH_SHORT).show()
                             editorOverlayView?.let { refreshWidgetViews(it) }
                         }
                     }

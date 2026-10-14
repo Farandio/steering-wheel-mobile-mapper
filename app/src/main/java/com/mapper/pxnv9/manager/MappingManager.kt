@@ -26,6 +26,9 @@ object MappingManager {
     // Callback saat user sedang mendengarkan tombol hardware di edit mode (keyCode, scanCode, keyName)
     var keyListenCallback: ((keyCode: Int, scanCode: Int, keyName: String) -> Unit)? = null
 
+    // Callback saat user sedang scan axis analog pedal (axisId, axisName)
+    var axisListenCallback: ((axisId: Int, axisName: String) -> Unit)? = null
+
     // Live Input Observers untuk HUD
     var onSteeringAngleChanged: ((degrees: Float, normalized: Float) -> Unit)? = null
     var onGearChanged: ((gear: String) -> Unit)? = null
@@ -494,6 +497,25 @@ object MappingManager {
     }
 
     fun processMotionEvent(event: MotionEvent, context: Context? = null): Boolean {
+        // Jika sedang mendengarkan scanning axis saat tambah tombol/mapping:
+        val axisScanListener = axisListenCallback
+        if (axisScanListener != null) {
+            val allAxes = intArrayOf(
+                MotionEvent.AXIS_GAS, MotionEvent.AXIS_BRAKE, MotionEvent.AXIS_Y, MotionEvent.AXIS_Z,
+                MotionEvent.AXIS_RZ, MotionEvent.AXIS_RX, MotionEvent.AXIS_RY, MotionEvent.AXIS_RTRIGGER,
+                MotionEvent.AXIS_LTRIGGER, MotionEvent.AXIS_THROTTLE, MotionEvent.AXIS_RUDDER, MotionEvent.AXIS_WHEEL
+            )
+            for (ax in allAxes) {
+                val v = event.getAxisValue(ax)
+                if (kotlin.math.abs(v) > 0.25f) {
+                    val name = MotionEvent.axisToString(ax).removePrefix("AXIS_")
+                    axisScanListener(ax, name)
+                    axisListenCallback = null
+                    return true
+                }
+            }
+        }
+
         val service = TouchAccessibilityService.instance ?: return false
 
         // Membaca semua event MotionEvent dari perangkat eksternal USB / OTG tanpa filter ketat
@@ -505,7 +527,11 @@ object MappingManager {
         val steeringAxisVal = event.getAxisValue(steeringAxisId)
         if (steeringWidget != null) {
             val effectiveVal = if (kotlin.math.abs(steeringAxisVal) < steeringWidget.deadzone) 0f else steeringAxisVal
-            if (kotlin.math.abs(effectiveVal - lastSteeringNormVal) > 0.02f) {
+            // Hitung derajat live untuk HUD selalu, meskipun delta kecil
+            val liveAngle = (effectiveVal * (steeringWidget.steeringDegrees / 2f))
+            onSteeringAngleChanged?.invoke(liveAngle, effectiveVal)
+
+            if (kotlin.math.abs(effectiveVal - lastSteeringNormVal) > 0.01f) {
                 service.injectCircularSteering(
                     centerX = steeringWidget.centerPoint.x,
                     centerY = steeringWidget.centerPoint.y,
@@ -523,10 +549,6 @@ object MappingManager {
                 }
 
                 lastSteeringNormVal = effectiveVal
-
-                // Notifikasi HUD derajat setir live
-                val liveAngle = (effectiveVal * (steeringWidget.steeringDegrees / 2f))
-                onSteeringAngleChanged?.invoke(liveAngle, effectiveVal)
             }
         }
 
@@ -615,6 +637,17 @@ object MappingManager {
                                 service.injectMultiPointPath(waypoints, durationMs = 160L, holdAtEndMs = 100L)
                             }
                         }
+                    }
+        // 4. Custom TAP / Macro Widgets yang diikat ke Axis Analog (Gas/Rem/Kopling/Trigger)
+        for (w in activeWidgets) {
+            if ((w.type == MappingType.TAP || w.type == MappingType.MACRO_TAP) && w.boundAxis != -1) {
+                val axisVal = event.getAxisValue(w.boundAxis)
+                val isTriggered = kotlin.math.abs(axisVal) > 0.35f
+                if (isTriggered) {
+                    if (w.type == MappingType.MACRO_TAP && w.macroPoints.isNotEmpty()) {
+                        service.injectMacroTaps(w.macroPoints, w.macroDelayMs)
+                    } else {
+                        service.injectTap(w.centerPoint.x, w.centerPoint.y)
                     }
                 }
             }

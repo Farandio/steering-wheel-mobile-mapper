@@ -271,7 +271,7 @@
                             android:id="@+id/tvGasAxisLabel"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Axis: Z"
+                            android:text="Axis: GAS (22)"
                             android:textColor="#EDF2F4"
                             android:textSize="11sp"
                             android:layout_marginEnd="6dp" />
@@ -373,7 +373,7 @@
                             android:id="@+id/tvBrakeAxisLabel"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Axis: R"
+                            android:text="Axis: BRAKE (23)"
                             android:textColor="#EDF2F4"
                             android:textSize="11sp"
                             android:layout_marginEnd="6dp" />
@@ -474,7 +474,7 @@
                             android:id="@+id/tvClutchAxisLabel"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Axis: U"
+                            android:text="Axis: Y (1)"
                             android:textColor="#EDF2F4"
                             android:textSize="11sp"
                             android:layout_marginEnd="6dp" />

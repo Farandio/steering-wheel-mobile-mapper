@@ -74,6 +74,30 @@ class MainActivity : AppCompatActivity() {
         tvClutchPct = findViewById(R.id.tvClutchPct)
         tvClutchAxisLabel = findViewById(R.id.tvClutchAxisLabel)
 
+        // Sinkronisasi pedal dengan konfigurasi profile aktif
+        com.mapper.pxnv9.manager.MappingManager.loadCustomMapping(this)
+        com.mapper.pxnv9.manager.MappingManager.activeWidgets.firstOrNull { it.id == "pedal_gas" }?.let {
+            if (it.boundAxis != -1) {
+                gasAxis = it.boundAxis
+                val name = android.view.MotionEvent.axisToString(it.boundAxis).removePrefix("AXIS_")
+                tvGasAxisLabel.text = "Axis: $name (${it.boundAxis})"
+            }
+        }
+        com.mapper.pxnv9.manager.MappingManager.activeWidgets.firstOrNull { it.id == "pedal_brake" }?.let {
+            if (it.boundAxis != -1) {
+                brakeAxis = it.boundAxis
+                val name = android.view.MotionEvent.axisToString(it.boundAxis).removePrefix("AXIS_")
+                tvBrakeAxisLabel.text = "Axis: $name (${it.boundAxis})"
+            }
+        }
+        com.mapper.pxnv9.manager.MappingManager.activeWidgets.firstOrNull { it.id == "pedal_clutch" }?.let {
+            if (it.boundAxis != -1) {
+                clutchAxis = it.boundAxis
+                val name = android.view.MotionEvent.axisToString(it.boundAxis).removePrefix("AXIS_")
+                tvClutchAxisLabel.text = "Axis: $name (${it.boundAxis})"
+            }
+        }
+
         // Button Listeners Pedal Gas
         findViewById<Button>(R.id.btnDetectGas).setOnClickListener {
             baselineRawAxes.clear()
@@ -268,21 +292,33 @@ class MainActivity : AppCompatActivity() {
                         gasRest = baselineRawAxes[detectedAxis] ?: 0f
                         gasPressed = currentRawAxes[detectedAxis] ?: 1.0f
                         tvGasAxisLabel.text = "Axis: $name"
-                        Toast.makeText(this, "Gas terdeteksi di Axis $name (Selisih: ${String.format("%.2f", maxDiff)})", Toast.LENGTH_SHORT).show()
+                        com.mapper.pxnv9.manager.MappingManager.activeWidgets.firstOrNull { it.id == "pedal_gas" }?.let {
+                            it.boundAxis = detectedAxis
+                        }
+                        com.mapper.pxnv9.manager.MappingManager.saveCurrentProfile(this)
+                        Toast.makeText(this, "Gas terdeteksi & disimpan di Axis $name (Selisih: ${String.format("%.2f", maxDiff)})", Toast.LENGTH_SHORT).show()
                     }
                     "brake" -> {
                         brakeAxis = detectedAxis
                         brakeRest = baselineRawAxes[detectedAxis] ?: 0f
                         brakePressed = currentRawAxes[detectedAxis] ?: 1.0f
                         tvBrakeAxisLabel.text = "Axis: $name"
-                        Toast.makeText(this, "Rem terdeteksi di Axis $name (Selisih: ${String.format("%.2f", maxDiff)})", Toast.LENGTH_SHORT).show()
+                        com.mapper.pxnv9.manager.MappingManager.activeWidgets.firstOrNull { it.id == "pedal_brake" }?.let {
+                            it.boundAxis = detectedAxis
+                        }
+                        com.mapper.pxnv9.manager.MappingManager.saveCurrentProfile(this)
+                        Toast.makeText(this, "Rem terdeteksi & disimpan di Axis $name (Selisih: ${String.format("%.2f", maxDiff)})", Toast.LENGTH_SHORT).show()
                     }
                     "clutch" -> {
                         clutchAxis = detectedAxis
                         clutchRest = baselineRawAxes[detectedAxis] ?: 0f
                         clutchPressed = currentRawAxes[detectedAxis] ?: 1.0f
                         tvClutchAxisLabel.text = "Axis: $name"
-                        Toast.makeText(this, "Kopling terdeteksi di Axis $name (Selisih: ${String.format("%.2f", maxDiff)})", Toast.LENGTH_SHORT).show()
+                        com.mapper.pxnv9.manager.MappingManager.activeWidgets.firstOrNull { it.id == "pedal_clutch" }?.let {
+                            it.boundAxis = detectedAxis
+                        }
+                        com.mapper.pxnv9.manager.MappingManager.saveCurrentProfile(this)
+                        Toast.makeText(this, "Kopling terdeteksi & disimpan di Axis $name (Selisih: ${String.format("%.2f", maxDiff)})", Toast.LENGTH_SHORT).show()
                     }
                 }
                 autoDetectTarget = null

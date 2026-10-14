@@ -73,32 +73,79 @@ class TouchAccessibilityService : AccessibilityService() {
     // State tracking untuk continuous touch pedal gas & rem (agar hold klik tidak putus di BUSSID)
     private var isGasTouching: Boolean = false
     private var isBrakeTouching: Boolean = false
+    private var gasStroke: GestureDescription.StrokeDescription? = null
+    private var brakeStroke: GestureDescription.StrokeDescription? = null
 
     /**
      * 2. Analog Progressive Pedal (Pedal Gas / Rem Touch Hold & Drag):
      * Menggunakan Touch Hold (tekan dan tahan) pada tombol virtual BUSSID.
-     * Jika pedal diinjak (> 10%), kursor virtual menekan dan menahan tombol pedal di game.
-     * Jika pedal dilepas (<= 10%), sentuhan diangkat secara alami (Touch Up).
+     * Menggunakan continueStroke agar virtual finger tetap menempel (Hold) di collider game.
      */
     fun injectPedalAnalog(baseX: Float, baseY: Float, travelDistance: Float, pressure: Float, isBrake: Boolean = false) {
         val isPressed = pressure > 0.12f
-        val isCurrentlyTouching = if (isBrake) isBrakeTouching else isGasTouching
 
         if (isPressed) {
-            // Tahan sentuhan pada pedal (Drag vertikal progresif sesuai kedalaman injakan)
             val targetY = baseY - (travelDistance * pressure.coerceIn(0f, 1f))
             val path = Path().apply {
                 moveTo(baseX, baseY)
                 lineTo(baseX, targetY)
             }
-            val stroke = GestureDescription.StrokeDescription(path, 0, 45L)
-            val gesture = GestureDescription.Builder().addStroke(stroke).build()
-            dispatchGesture(gesture, null, null)
 
-            if (isBrake) isBrakeTouching = true else isGasTouching = true
+            try {
+                val stroke = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    val prev = if (isBrake) brakeStroke else gasStroke
+                    val isTouching = if (isBrake) isBrakeTouching else isGasTouching
+                    if (isTouching && prev != null) {
+                        prev.continueStroke(path, 0, 50L, true)
+                    } else {
+                        GestureDescription.StrokeDescription(path, 0, 50L, true)
+                    }
+                } else {
+                    GestureDescription.StrokeDescription(path, 0, 50L)
+                }
+
+                val gesture = GestureDescription.Builder().addStroke(stroke).build()
+                dispatchGesture(gesture, object : AccessibilityService.GestureResultCallback() {
+                    override fun onCompleted(gestureDescription: GestureDescription?) {
+                        super.onCompleted(gestureDescription)
+                        if (isBrake) {
+                            brakeStroke = stroke
+                            isBrakeTouching = true
+                        } else {
+                            gasStroke = stroke
+                            isGasTouching = true
+                        }
+                    }
+
+                    override fun onCancelled(gestureDescription: GestureDescription?) {
+                        super.onCancelled(gestureDescription)
+                        if (isBrake) {
+                            brakeStroke = null
+                            isBrakeTouching = false
+                        } else {
+                            gasStroke = null
+                            isGasTouching = false
+                        }
+                    }
+                }, null)
+            } catch (e: Exception) {
+                if (isBrake) {
+                    brakeStroke = null
+                    isBrakeTouching = false
+                } else {
+                    gasStroke = null
+                    isGasTouching = false
+                }
+            }
         } else {
-            // Jika pedal dilepas, biarkan sentuhan berakhir
-            if (isBrake) isBrakeTouching = false else isGasTouching = false
+            // Pedal dilepas: Lepaskan stroke hold (Touch Up)
+            if (isBrake) {
+                brakeStroke = null
+                isBrakeTouching = false
+            } else {
+                gasStroke = null
+                isGasTouching = false
+            }
         }
     }
 
