@@ -201,24 +201,32 @@ class OverlayService : Service() {
         var startY = 0
         var touchDownX = 0f
         var touchDownY = 0f
+        var isDragging = false
 
-        pillLayout.setOnTouchListener { _, event ->
+        // Sentuhan pada judul/label untuk menggeser pill atau membuka Edit Mode
+        val dragTouchListener = View.OnTouchListener { _, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     startX = floatParams!!.x
                     startY = floatParams!!.y
                     touchDownX = event.rawX
                     touchDownY = event.rawY
+                    isDragging = false
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    floatParams!!.x = startX + (event.rawX - touchDownX).toInt()
-                    floatParams!!.y = startY + (event.rawY - touchDownY).toInt()
-                    windowManager.updateViewLayout(pillLayout, floatParams)
+                    val deltaX = (event.rawX - touchDownX).toInt()
+                    val deltaY = (event.rawY - touchDownY).toInt()
+                    if (kotlin.math.abs(deltaX) > 10 || kotlin.math.abs(deltaY) > 10) {
+                        isDragging = true
+                        floatParams!!.x = startX + deltaX
+                        floatParams!!.y = startY + deltaY
+                        windowManager.updateViewLayout(pillLayout, floatParams)
+                    }
                     true
                 }
                 MotionEvent.ACTION_UP -> {
-                    if (kotlin.math.abs(event.rawX - touchDownX) < 15 && kotlin.math.abs(event.rawY - touchDownY) < 15) {
+                    if (!isDragging) {
                         toggleEditMode()
                     }
                     true
@@ -226,6 +234,9 @@ class OverlayService : Service() {
                 else -> false
             }
         }
+
+        tvTitle.setOnTouchListener(dragTouchListener)
+        tvLiveHud.setOnTouchListener(dragTouchListener)
 
         pillLayout.setOnGenericMotionListener { _, event ->
             MappingManager.processMotionEvent(event, this@OverlayService)
