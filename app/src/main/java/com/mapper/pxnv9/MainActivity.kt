@@ -21,6 +21,35 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvServiceStatus: TextView
     private lateinit var btnToggleOverlay: Button
 
+    // UI Kalibrasi 3 Pedal (Persis GUI Python)
+    private lateinit var tvRawAllAxes: TextView
+    private lateinit var pbGas: android.widget.ProgressBar
+    private lateinit var tvGasPct: TextView
+    private lateinit var tvGasAxisLabel: TextView
+
+    private lateinit var pbBrake: android.widget.ProgressBar
+    private lateinit var tvBrakePct: TextView
+    private lateinit var tvBrakeAxisLabel: TextView
+
+    private lateinit var pbClutch: android.widget.ProgressBar
+    private lateinit var tvClutchPct: TextView
+    private lateinit var tvClutchAxisLabel: TextView
+
+    // State kalibrasi min/max/rest/pressed pedal
+    private var gasRest = 0f
+    private var gasPressed = 1.0f
+    private var gasAxis = android.view.MotionEvent.AXIS_GAS
+
+    private var brakeRest = 0f
+    private var brakePressed = 1.0f
+    private var brakeAxis = android.view.MotionEvent.AXIS_BRAKE
+
+    private var clutchRest = 0f
+    private var clutchPressed = 1.0f
+    private var clutchAxis = android.view.MotionEvent.AXIS_Y
+
+    private var autoDetectTarget: String? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -28,6 +57,63 @@ class MainActivity : AppCompatActivity() {
         tvDeviceStatus = findViewById(R.id.tvDeviceStatus)
         tvServiceStatus = findViewById(R.id.tvServiceStatus)
         btnToggleOverlay = findViewById(R.id.btnToggleOverlay)
+
+        // Bind 3 Pedal UI
+        tvRawAllAxes = findViewById(R.id.tvRawAllAxes)
+
+        pbGas = findViewById(R.id.pbGas)
+        tvGasPct = findViewById(R.id.tvGasPct)
+        tvGasAxisLabel = findViewById(R.id.tvGasAxisLabel)
+
+        pbBrake = findViewById(R.id.pbBrake)
+        tvBrakePct = findViewById(R.id.tvBrakePct)
+        tvBrakeAxisLabel = findViewById(R.id.tvBrakeAxisLabel)
+
+        pbClutch = findViewById(R.id.pbClutch)
+        tvClutchPct = findViewById(R.id.tvClutchPct)
+        tvClutchAxisLabel = findViewById(R.id.tvClutchAxisLabel)
+
+        // Button Listeners Pedal Gas
+        findViewById<Button>(R.id.btnDetectGas).setOnClickListener {
+            autoDetectTarget = "gas"
+            Toast.makeText(this, "Injak pedal GAS sekarang...", Toast.LENGTH_SHORT).show()
+        }
+        findViewById<Button>(R.id.btnSetGasRest).setOnClickListener {
+            gasRest = currentRawAxes[gasAxis] ?: 0f
+            Toast.makeText(this, "Titik LEPAS Gas disimpan: $gasRest", Toast.LENGTH_SHORT).show()
+        }
+        findViewById<Button>(R.id.btnSetGasPressed).setOnClickListener {
+            gasPressed = currentRawAxes[gasAxis] ?: 1.0f
+            Toast.makeText(this, "Titik INJAK Gas disimpan: $gasPressed", Toast.LENGTH_SHORT).show()
+        }
+
+        // Button Listeners Pedal Rem
+        findViewById<Button>(R.id.btnDetectBrake).setOnClickListener {
+            autoDetectTarget = "brake"
+            Toast.makeText(this, "Injak pedal REM sekarang...", Toast.LENGTH_SHORT).show()
+        }
+        findViewById<Button>(R.id.btnSetBrakeRest).setOnClickListener {
+            brakeRest = currentRawAxes[brakeAxis] ?: 0f
+            Toast.makeText(this, "Titik LEPAS Rem disimpan: $brakeRest", Toast.LENGTH_SHORT).show()
+        }
+        findViewById<Button>(R.id.btnSetBrakePressed).setOnClickListener {
+            brakePressed = currentRawAxes[brakeAxis] ?: 1.0f
+            Toast.makeText(this, "Titik INJAK Rem disimpan: $brakePressed", Toast.LENGTH_SHORT).show()
+        }
+
+        // Button Listeners Pedal Kopling
+        findViewById<Button>(R.id.btnDetectClutch).setOnClickListener {
+            autoDetectTarget = "clutch"
+            Toast.makeText(this, "Injak pedal KOPLING sekarang...", Toast.LENGTH_SHORT).show()
+        }
+        findViewById<Button>(R.id.btnSetClutchRest).setOnClickListener {
+            clutchRest = currentRawAxes[clutchAxis] ?: 0f
+            Toast.makeText(this, "Titik LEPAS Kopling disimpan: $clutchRest", Toast.LENGTH_SHORT).show()
+        }
+        findViewById<Button>(R.id.btnSetClutchPressed).setOnClickListener {
+            clutchPressed = currentRawAxes[clutchAxis] ?: 1.0f
+            Toast.makeText(this, "Titik INJAK Kopling disimpan: $clutchPressed", Toast.LENGTH_SHORT).show()
+        }
 
         findViewById<Button>(R.id.btnGrantAccessibility).setOnClickListener {
             val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
@@ -44,14 +130,6 @@ class MainActivity : AppCompatActivity() {
             } else {
                 Toast.makeText(this, "Izin Overlay sudah aktif", Toast.LENGTH_SHORT).show()
             }
-        }
-
-        findViewById<Button>(R.id.btnCalibrateHardware).setOnClickListener {
-            showHardwareCalibrationDialog()
-        }
-
-        findViewById<Button>(R.id.btnToggleAdb).setOnClickListener {
-            showAdbWirelessDialog()
         }
 
         btnToggleOverlay.setOnClickListener {
@@ -114,25 +192,87 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    private val currentRawAxes = mutableMapOf<Int, Float>()
+
     override fun onGenericMotionEvent(event: android.view.MotionEvent): Boolean {
+        // 1. Baca nilai semua axis penting (X, Y, Z, R, RX, RY, GAS, BRAKE, dll)
+        val axes = intArrayOf(
+            android.view.MotionEvent.AXIS_X,
+            android.view.MotionEvent.AXIS_Y,
+            android.view.MotionEvent.AXIS_Z,
+            android.view.MotionEvent.AXIS_RX,
+            android.view.MotionEvent.AXIS_RY,
+            android.view.MotionEvent.AXIS_RZ,
+            android.view.MotionEvent.AXIS_GAS,
+            android.view.MotionEvent.AXIS_BRAKE,
+            android.view.MotionEvent.AXIS_RTRIGGER,
+            android.view.MotionEvent.AXIS_LTRIGGER,
+            android.view.MotionEvent.AXIS_THROTTLE,
+            android.view.MotionEvent.AXIS_RUDDER,
+            android.view.MotionEvent.AXIS_WHEEL
+        )
+
+        for (ax in axes) {
+            currentRawAxes[ax] = event.getAxisValue(ax)
+        }
+
+        // 2. Format baris teks "Nilai Raw Semua Axis: X: ... | Y: ... | Z: ... | R: ... | U: ... | V: ..."
+        val rawX = String.format("%.2f", currentRawAxes[android.view.MotionEvent.AXIS_X] ?: 0f)
+        val rawY = String.format("%.2f", currentRawAxes[android.view.MotionEvent.AXIS_Y] ?: 0f)
+        val rawZ = String.format("%.2f", currentRawAxes[android.view.MotionEvent.AXIS_Z] ?: 0f)
+        val rawR = String.format("%.2f", currentRawAxes[android.view.MotionEvent.AXIS_RZ] ?: currentRawAxes[android.view.MotionEvent.AXIS_RTRIGGER] ?: 0f)
+        val rawU = String.format("%.2f", currentRawAxes[android.view.MotionEvent.AXIS_RX] ?: 0f)
+        val rawV = String.format("%.2f", currentRawAxes[android.view.MotionEvent.AXIS_RY] ?: 0f)
+
+        tvRawAllAxes.text = "X: $rawX | Y: $rawY | Z: $rawZ | R: $rawR | U: $rawU | V: $rawV"
+
+        // 3. Auto-Detect Axis Pedal saat tombol Auto-Detect ditekan
+        autoDetectTarget?.let { target ->
+            for (ax in axes) {
+                val v = event.getAxisValue(ax)
+                if (kotlin.math.abs(v) > 0.25f) {
+                    val name = android.view.MotionEvent.axisToString(ax).removePrefix("AXIS_")
+                    when (target) {
+                        "gas" -> {
+                            gasAxis = ax
+                            tvGasAxisLabel.text = "Axis: $name"
+                            Toast.makeText(this, "Gas dipasangkan ke Axis $name", Toast.LENGTH_SHORT).show()
+                        }
+                        "brake" -> {
+                            brakeAxis = ax
+                            tvBrakeAxisLabel.text = "Axis: $name"
+                            Toast.makeText(this, "Rem dipasangkan ke Axis $name", Toast.LENGTH_SHORT).show()
+                        }
+                        "clutch" -> {
+                            clutchAxis = ax
+                            tvClutchAxisLabel.text = "Axis: $name"
+                            Toast.makeText(this, "Kopling dipasangkan ke Axis $name", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                    autoDetectTarget = null
+                    break
+                }
+            }
+        }
+
+        // 4. Hitung persentase injakan (0% - 100%) dan gerakkan ProgressBar
+        val curGas = currentRawAxes[gasAxis] ?: 0f
+        val pctGas = calculatePedalPct(curGas, gasRest, gasPressed)
+        pbGas.progress = pctGas
+        tvGasPct.text = "$pctGas%"
+
+        val curBrake = currentRawAxes[brakeAxis] ?: 0f
+        val pctBrake = calculatePedalPct(curBrake, brakeRest, brakePressed)
+        pbBrake.progress = pctBrake
+        tvBrakePct.text = "$pctBrake%"
+
+        val curClutch = currentRawAxes[clutchAxis] ?: 0f
+        val pctClutch = calculatePedalPct(curClutch, clutchRest, clutchPressed)
+        pbClutch.progress = pctClutch
+        tvClutchPct.text = "$pctClutch%"
+
+        // Teruskan juga ke dialog kalibrasi jika aktif
         calibrationListener?.let { listener ->
-            val axes = intArrayOf(
-                android.view.MotionEvent.AXIS_X,
-                android.view.MotionEvent.AXIS_Y,
-                android.view.MotionEvent.AXIS_Z,
-                android.view.MotionEvent.AXIS_RX,
-                android.view.MotionEvent.AXIS_RY,
-                android.view.MotionEvent.AXIS_RZ,
-                android.view.MotionEvent.AXIS_GAS,
-                android.view.MotionEvent.AXIS_BRAKE,
-                android.view.MotionEvent.AXIS_RTRIGGER,
-                android.view.MotionEvent.AXIS_LTRIGGER,
-                android.view.MotionEvent.AXIS_THROTTLE,
-                android.view.MotionEvent.AXIS_RUDDER,
-                android.view.MotionEvent.AXIS_WHEEL,
-                android.view.MotionEvent.AXIS_HAT_X,
-                android.view.MotionEvent.AXIS_HAT_Y
-            )
             for (axis in axes) {
                 val value = event.getAxisValue(axis)
                 if (kotlin.math.abs(value) > 0.08f) {
@@ -144,6 +284,13 @@ class MainActivity : AppCompatActivity() {
             return true
         }
         return super.onGenericMotionEvent(event)
+    }
+
+    private fun calculatePedalPct(current: Float, rest: Float, pressed: Float): Int {
+        val range = pressed - rest
+        if (range == 0f) return 0
+        val pct = ((current - rest) / range) * 100f
+        return pct.toInt().coerceIn(0, 100)
     }
 
     override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent): Boolean {

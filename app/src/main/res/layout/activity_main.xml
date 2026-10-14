@@ -152,37 +152,375 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- Calibration & Tools -->
-        <LinearLayout
+        <!-- ================= 3 PEDAL CALIBRATION & LIVE DETECT (PERSIS GAMBAR) ================= -->
+        <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginBottom="16dp">
+            app:cardCornerRadius="12dp"
+            app:cardBackgroundColor="#1E1E2D"
+            app:strokeColor="#2C3848"
+            app:strokeWidth="1dp"
+            android:layout_marginBottom="14dp">
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnCalibrateHardware"
-                android:layout_width="0dp"
-                android:layout_height="50dp"
-                android:layout_weight="1"
-                android:text="🎯 Kalibrasi Axis"
-                android:textColor="#FFFFFF"
-                app:backgroundTint="#3A86FF"
-                app:cornerRadius="8dp"
-                android:layout_marginEnd="6dp"
-                android:textAllCaps="false" />
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="14dp">
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnToggleAdb"
-                android:layout_width="0dp"
-                android:layout_height="50dp"
-                android:layout_weight="1"
-                android:text="⚡ ADB 0ms Delay"
-                android:textColor="#FFFFFF"
-                app:backgroundTint="#2B2D42"
-                app:cornerRadius="8dp"
-                android:layout_marginStart="6dp"
-                android:textAllCaps="false" />
-        </LinearLayout>
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Pedal Gas &amp; Rem Otomatis Mengirim Input ke Game:"
+                    android:textColor="#FCA311"
+                    android:textSize="12sp"
+                    android:textStyle="bold"
+                    android:layout_marginBottom="8dp" />
+
+                <!-- Nilai Raw Semua Axis -->
+                <com.google.android.material.card.MaterialCardView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    app:cardCornerRadius="6dp"
+                    app:cardBackgroundColor="#151520"
+                    app:strokeColor="#06D6A0"
+                    app:strokeWidth="1dp"
+                    android:layout_marginBottom="12dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:padding="8dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Nilai Raw Semua Axis:"
+                            android:textColor="#06D6A0"
+                            android:textSize="10sp"
+                            android:layout_marginBottom="4dp" />
+
+                        <TextView
+                            android:id="@+id/tvRawAllAxes"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="X: 0 | Y: 0 | Z: 0 | R: 0 | U: 0 | V: 0"
+                            android:textColor="#EDF2F4"
+                            android:textSize="12sp"
+                            android:textStyle="bold"
+                            android:gravity="center"
+                            android:fontFamily="monospace" />
+                    </LinearLayout>
+                </com.google.android.material.card.MaterialCardView>
+
+                <!-- 1. PEDAL GAS (Throttle) -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:background="#151520"
+                    android:padding="10dp"
+                    android:layout_marginBottom="10dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="🟢 PEDAL GAS (Throttle)"
+                        android:textColor="#06D6A0"
+                        android:textSize="12sp"
+                        android:textStyle="bold"
+                        android:layout_marginBottom="6dp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="8dp">
+
+                        <ProgressBar
+                            android:id="@+id/pbGas"
+                            style="?android:attr/progressBarStyleHorizontal"
+                            android:layout_width="0dp"
+                            android:layout_height="18dp"
+                            android:layout_weight="1"
+                            android:max="100"
+                            android:progress="0"
+                            android:progressTint="#06D6A0"
+                            android:background="#333333" />
+
+                        <TextView
+                            android:id="@+id/tvGasPct"
+                            android:layout_width="48dp"
+                            android:layout_height="wrap_content"
+                            android:text="0%"
+                            android:textColor="#06D6A0"
+                            android:textSize="12sp"
+                            android:textStyle="bold"
+                            android:gravity="end" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <TextView
+                            android:id="@+id/tvGasAxisLabel"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Axis: Z"
+                            android:textColor="#EDF2F4"
+                            android:textSize="11sp"
+                            android:layout_marginEnd="6dp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnDetectGas"
+                            android:layout_width="wrap_content"
+                            android:layout_height="36dp"
+                            android:text="⚡ Auto-Detect"
+                            android:textColor="#FFFFFF"
+                            android:textSize="10sp"
+                            app:backgroundTint="#4F5D75"
+                            app:cornerRadius="4dp"
+                            android:paddingHorizontal="6dp"
+                            android:layout_marginEnd="4dp"
+                            android:textAllCaps="false" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnSetGasRest"
+                            android:layout_width="wrap_content"
+                            android:layout_height="36dp"
+                            android:text="Set Lepas"
+                            android:textColor="#FFFFFF"
+                            android:textSize="10sp"
+                            app:backgroundTint="#3A86FF"
+                            app:cornerRadius="4dp"
+                            android:paddingHorizontal="6dp"
+                            android:layout_marginEnd="4dp"
+                            android:textAllCaps="false" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnSetGasPressed"
+                            android:layout_width="wrap_content"
+                            android:layout_height="36dp"
+                            android:text="Set Injak"
+                            android:textColor="#FFFFFF"
+                            android:textSize="10sp"
+                            app:backgroundTint="#3A86FF"
+                            app:cornerRadius="4dp"
+                            android:paddingHorizontal="6dp"
+                            android:textAllCaps="false" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- 2. PEDAL REM (Brake) -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:background="#151520"
+                    android:padding="10dp"
+                    android:layout_marginBottom="10dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="🔴 PEDAL REM (Brake)"
+                        android:textColor="#EF233C"
+                        android:textSize="12sp"
+                        android:textStyle="bold"
+                        android:layout_marginBottom="6dp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="8dp">
+
+                        <ProgressBar
+                            android:id="@+id/pbBrake"
+                            style="?android:attr/progressBarStyleHorizontal"
+                            android:layout_width="0dp"
+                            android:layout_height="18dp"
+                            android:layout_weight="1"
+                            android:max="100"
+                            android:progress="0"
+                            android:progressTint="#EF233C"
+                            android:background="#333333" />
+
+                        <TextView
+                            android:id="@+id/tvBrakePct"
+                            android:layout_width="48dp"
+                            android:layout_height="wrap_content"
+                            android:text="0%"
+                            android:textColor="#EF233C"
+                            android:textSize="12sp"
+                            android:textStyle="bold"
+                            android:gravity="end" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <TextView
+                            android:id="@+id/tvBrakeAxisLabel"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Axis: R"
+                            android:textColor="#EDF2F4"
+                            android:textSize="11sp"
+                            android:layout_marginEnd="6dp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnDetectBrake"
+                            android:layout_width="wrap_content"
+                            android:layout_height="36dp"
+                            android:text="⚡ Auto-Detect"
+                            android:textColor="#FFFFFF"
+                            android:textSize="10sp"
+                            app:backgroundTint="#4F5D75"
+                            app:cornerRadius="4dp"
+                            android:paddingHorizontal="6dp"
+                            android:layout_marginEnd="4dp"
+                            android:textAllCaps="false" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnSetBrakeRest"
+                            android:layout_width="wrap_content"
+                            android:layout_height="36dp"
+                            android:text="Set Lepas"
+                            android:textColor="#FFFFFF"
+                            android:textSize="10sp"
+                            app:backgroundTint="#3A86FF"
+                            app:cornerRadius="4dp"
+                            android:paddingHorizontal="6dp"
+                            android:layout_marginEnd="4dp"
+                            android:textAllCaps="false" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnSetBrakePressed"
+                            android:layout_width="wrap_content"
+                            android:layout_height="36dp"
+                            android:text="Set Injak"
+                            android:textColor="#FFFFFF"
+                            android:textSize="10sp"
+                            app:backgroundTint="#3A86FF"
+                            app:cornerRadius="4dp"
+                            android:paddingHorizontal="6dp"
+                            android:textAllCaps="false" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- 3. PEDAL KOPLING (Clutch) -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:background="#151520"
+                    android:padding="10dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="🔵 PEDAL KOPLING (Clutch)"
+                        android:textColor="#3A86FF"
+                        android:textSize="12sp"
+                        android:textStyle="bold"
+                        android:layout_marginBottom="6dp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="8dp">
+
+                        <ProgressBar
+                            android:id="@+id/pbClutch"
+                            style="?android:attr/progressBarStyleHorizontal"
+                            android:layout_width="0dp"
+                            android:layout_height="18dp"
+                            android:layout_weight="1"
+                            android:max="100"
+                            android:progress="0"
+                            android:progressTint="#3A86FF"
+                            android:background="#333333" />
+
+                        <TextView
+                            android:id="@+id/tvClutchPct"
+                            android:layout_width="48dp"
+                            android:layout_height="wrap_content"
+                            android:text="0%"
+                            android:textColor="#3A86FF"
+                            android:textSize="12sp"
+                            android:textStyle="bold"
+                            android:gravity="end" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical">
+
+                        <TextView
+                            android:id="@+id/tvClutchAxisLabel"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Axis: U"
+                            android:textColor="#EDF2F4"
+                            android:textSize="11sp"
+                            android:layout_marginEnd="6dp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnDetectClutch"
+                            android:layout_width="wrap_content"
+                            android:layout_height="36dp"
+                            android:text="⚡ Auto-Detect"
+                            android:textColor="#FFFFFF"
+                            android:textSize="10sp"
+                            app:backgroundTint="#4F5D75"
+                            app:cornerRadius="4dp"
+                            android:paddingHorizontal="6dp"
+                            android:layout_marginEnd="4dp"
+                            android:textAllCaps="false" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnSetClutchRest"
+                            android:layout_width="wrap_content"
+                            android:layout_height="36dp"
+                            android:text="Set Lepas"
+                            android:textColor="#FFFFFF"
+                            android:textSize="10sp"
+                            app:backgroundTint="#3A86FF"
+                            app:cornerRadius="4dp"
+                            android:paddingHorizontal="6dp"
+                            android:layout_marginEnd="4dp"
+                            android:textAllCaps="false" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnSetClutchPressed"
+                            android:layout_width="wrap_content"
+                            android:layout_height="36dp"
+                            android:text="Set Injak"
+                            android:textColor="#FFFFFF"
+                            android:textSize="10sp"
+                            app:backgroundTint="#3A86FF"
+                            app:cornerRadius="4dp"
+                            android:paddingHorizontal="6dp"
+                            android:textAllCaps="false" />
+                    </LinearLayout>
+                </LinearLayout>
+
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
 
         <!-- Main Button: Start Keymapper -->
         <com.google.android.material.button.MaterialButton

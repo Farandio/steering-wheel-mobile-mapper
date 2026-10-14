@@ -91,10 +91,9 @@ class TouchAccessibilityService : AccessibilityService() {
     private var isSteeringTouching: Boolean = false
 
     /**
-     * 3. Setir Rotasi 900 Derajat (Circular Continuous Drag):
-     * Jari virtual terus menempel di lingkar setir (tidak diangkat dan disentuh ulang)
-     * saat setir fisik diputar, sehingga game BUSSID membaca rotasi melingkar yang mulus (bukan swipe putus-putus).
-     * Saat setir fisik kembali ke tengah (center 0), jari virtual diangkat secara alami.
+     * 3. Setir Rotasi 900 Derajat (Circular Continuous Touch & Drag):
+     * Jari virtual terus menempel di lingkaran setir BUSSID (Hold & Drag)
+     * saat setir fisik diputar. Saat setir kembali lurus (deadzone), sentuhan dilepas.
      */
     fun injectCircularSteering(
         centerX: Float,
@@ -118,11 +117,17 @@ class TouchAccessibilityService : AccessibilityService() {
         val startY = centerY + radius * sin(startAngle)
 
         val isBackToCenter = kotlin.math.abs(toNorm) < 0.03f
-        val willContinue = !isBackToCenter
+
+        if (isBackToCenter) {
+            // Setir kembali lurus -> Lepaskan sentuhan jari
+            currentSteeringStroke = null
+            isSteeringTouching = false
+            return
+        }
 
         val path = Path().apply {
             moveTo(startX, startY)
-            val steps = 6
+            val steps = 8
             for (i in 1..steps) {
                 val theta = startAngle + (endAngle - startAngle) * (i / steps.toFloat())
                 val px = centerX + radius * cos(theta)
@@ -133,27 +138,22 @@ class TouchAccessibilityService : AccessibilityService() {
 
         try {
             val stroke = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val prevStroke = currentSteeringStroke
-                if (isSteeringTouching && prevStroke != null) {
-                    prevStroke.continueStroke(path, 0, 45L, willContinue)
+                val prev = currentSteeringStroke
+                if (isSteeringTouching && prev != null) {
+                    prev.continueStroke(path, 0, 60L, true)
                 } else {
-                    GestureDescription.StrokeDescription(path, 0, 45L, willContinue)
+                    GestureDescription.StrokeDescription(path, 0, 60L, true)
                 }
             } else {
-                GestureDescription.StrokeDescription(path, 0, 45L)
+                GestureDescription.StrokeDescription(path, 0, 60L)
             }
 
             val gesture = GestureDescription.Builder().addStroke(stroke).build()
             dispatchGesture(gesture, object : AccessibilityService.GestureResultCallback() {
                 override fun onCompleted(gestureDescription: GestureDescription?) {
                     super.onCompleted(gestureDescription)
-                    if (willContinue) {
-                        currentSteeringStroke = stroke
-                        isSteeringTouching = true
-                    } else {
-                        currentSteeringStroke = null
-                        isSteeringTouching = false
-                    }
+                    currentSteeringStroke = stroke
+                    isSteeringTouching = true
                 }
 
                 override fun onCancelled(gestureDescription: GestureDescription?) {
@@ -163,10 +163,10 @@ class TouchAccessibilityService : AccessibilityService() {
                 }
             }, null)
         } catch (e: Exception) {
+            // Fallback gesture jika continueStroke limit
             currentSteeringStroke = null
             isSteeringTouching = false
-            // Fallback gesture sederhana jika API continueStroke mengalami limitasi
-            val fallbackStroke = GestureDescription.StrokeDescription(path, 0, 40L)
+            val fallbackStroke = GestureDescription.StrokeDescription(path, 0, 50L)
             val fallbackGesture = GestureDescription.Builder().addStroke(fallbackStroke).build()
             dispatchGesture(fallbackGesture, null, null)
         }
