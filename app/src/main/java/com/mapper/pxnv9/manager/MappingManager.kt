@@ -462,7 +462,7 @@ object MappingManager {
                                 Pair(startX, neutralY),
                                 Pair(neutralX, neutralY)
                             )
-                            service.injectMultiPointPath(waypoints, durationMs = 50L, holdAtEndMs = 40L)
+                            service.injectMultiPointPath(waypoints, durationMs = 140L, holdAtEndMs = 80L)
                             currentGear = "N"
                             onGearChanged?.invoke("N (Kopling)")
                             context?.let { triggerHapticFeedback(it, 30L) }
@@ -482,7 +482,7 @@ object MappingManager {
                                     Pair(targetPos.x, neutralY),
                                     Pair(targetPos.x, targetPos.y)
                                 )
-                                service.injectMultiPointPath(waypoints, durationMs = 50L, holdAtEndMs = 60L)
+                                service.injectMultiPointPath(waypoints, durationMs = 160L, holdAtEndMs = 100L)
                             }
                         }
                     }
@@ -598,7 +598,7 @@ object MappingManager {
                             }
                         }
 
-                        service.injectMultiPointPath(waypoints, durationMs = 70L, holdAtEndMs = 60L)
+                        service.injectMultiPointPath(waypoints, durationMs = 180L, holdAtEndMs = 120L)
                     } else if (action == KeyEvent.ACTION_UP && lastGearBeforeClutch == targetGear) {
                         // Tuas fisik dilepas ke Netral
                         lastGearBeforeClutch = null
@@ -612,7 +612,7 @@ object MappingManager {
                                 Pair(targetPos.x, neutralY),     // Keluar ke koridor horizontal
                                 Pair(neutralX, neutralY)         // Masuk kembali ke titik tengah (Netral)
                             )
-                            service.injectMultiPointPath(waypoints, durationMs = 50L, holdAtEndMs = 40L)
+                            service.injectMultiPointPath(waypoints, durationMs = 140L, holdAtEndMs = 80L)
                         }
                     }
                 }

@@ -56,17 +56,16 @@ class OverlayService : Service() {
 
     /**
      * Window transparan khusus di background untuk menangkap GenericMotionEvents (Axis analog setir & 3 pedal).
-     * Menggunakan FLAG_NOT_TOUCH_MODAL agar game BUSSID tetap dapat disentuh dengan normal,
-     * sambil menerima joystick/wheel events.
+     * Diberi FLAG_NOT_TOUCH_MODAL agar game BUSSID tetap dapat disentuh dengan normal,
+     * sambil View menerima joystick/wheel events.
      */
     private fun setupMotionInterceptor() {
         if (motionInterceptorView != null) return
 
         val interceptorParams = WindowManager.LayoutParams(
-            1, // Ukuran 1x1 piksel agar tidak menghalangi sentuhan layar game
+            1, // Ukuran 1x1 piksel di pojok agar tidak mengganggu sentuhan game
             1,
             getOverlayWindowType(),
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
             PixelFormat.TRANSLUCENT
         ).apply {
@@ -76,13 +75,19 @@ class OverlayService : Service() {
         }
 
         motionInterceptorView = View(this).apply {
+            isFocusable = true
+            isFocusableInTouchMode = true
             setOnGenericMotionListener { _, event ->
                 MappingManager.processMotionEvent(event, this@OverlayService)
+            }
+            setOnKeyListener { _, keyCode, event ->
+                MappingManager.processKeyEvent(event, this@OverlayService)
             }
         }
 
         try {
             windowManager.addView(motionInterceptorView, interceptorParams)
+            motionInterceptorView?.requestFocus()
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -594,7 +599,22 @@ class OverlayService : Service() {
             addView(tvTitle)
 
             val tvKey = TextView(this@OverlayService).apply {
-                text = "Key: [${widget.boundKeyName}]"
+                text = if (widget.type == MappingType.PEDAL_ANALOG) {
+                    val axisName = when (widget.boundAxis) {
+                        MotionEvent.AXIS_GAS -> "AXIS_GAS (22)"
+                        MotionEvent.AXIS_BRAKE -> "AXIS_BRAKE (23)"
+                        MotionEvent.AXIS_Y -> "AXIS_Y (1)"
+                        MotionEvent.AXIS_Z -> "AXIS_Z (11)"
+                        MotionEvent.AXIS_RZ -> "AXIS_RZ (14)"
+                        MotionEvent.AXIS_RTRIGGER -> "AXIS_RTRIGGER (18)"
+                        MotionEvent.AXIS_LTRIGGER -> "AXIS_LTRIGGER (17)"
+                        -1 -> "Auto Axis"
+                        else -> "Axis ${widget.boundAxis}"
+                    }
+                    "Axis: [$axisName]"
+                } else {
+                    "Key: [${widget.boundKeyName}]"
+                }
                 setTextColor(Color.YELLOW)
                 textSize = 10f
                 gravity = Gravity.CENTER

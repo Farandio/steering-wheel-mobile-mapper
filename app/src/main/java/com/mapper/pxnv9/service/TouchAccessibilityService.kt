@@ -87,8 +87,15 @@ class TouchAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * 3. Setir Rotasi 900 Derajat (Arc / Circular Drag)
-     * Titik sentuh berada pada lingkar luar setir virtual BUSSID, sehingga bagian tengah tetap bebas untuk klakson.
+    // State pelacak stroke sentuhan kontinu (Continuous Drag) untuk setir kemudi
+    private var currentSteeringStroke: GestureDescription.StrokeDescription? = null
+    private var isSteeringTouching: Boolean = false
+
+    /**
+     * 3. Setir Rotasi 900 Derajat (Circular Continuous Drag):
+     * Jari virtual terus menempel di lingkar setir (tidak diangkat dan disentuh ulang)
+     * saat setir fisik diputar, sehingga game BUSSID membaca rotasi melingkar yang mulus (bukan swipe putus-putus).
+     * Saat setir fisik kembali ke tengah (center 0), jari virtual diangkat secara alami.
      */
     fun injectCircularSteering(
         centerX: Float,
@@ -102,8 +109,6 @@ class TouchAccessibilityService : AccessibilityService() {
     ) {
         val maxRotRadian = (maxDegrees / 2f) * (PI.toFloat() / 180f) * sensitivity
 
-        // Terapkan kurva non-linearitas: sign(x) * |x|^linearity
-        // Nilai linearity > 1.0 membuat respon di tengah lebih halus/tenang untuk kestabilan jalan lurus
         val curvedFrom = kotlin.math.sign(fromNorm) * kotlin.math.abs(fromNorm).toDouble().let { Math.pow(it, linearity.toDouble()).toFloat() }
         val curvedTo = kotlin.math.sign(toNorm) * kotlin.math.abs(toNorm).toDouble().let { Math.pow(it, linearity.toDouble()).toFloat() }
 
@@ -113,10 +118,11 @@ class TouchAccessibilityService : AccessibilityService() {
         val startX = centerX + radius * cos(startAngle)
         val startY = centerY + radius * sin(startAngle)
 
+        val isBackToCenter = kotlin.math.abs(toNorm) < 0.03f
+        val willContinue = !isBackToCenter
+
         val path = Path().apply {
             moveTo(startX, startY)
-            // Interpolasi beberapa titik di sepanjang busur lingkaran agar sentuhan benar-benar memutar setir,
-            // bukan memotong lurus (chord) ke tengah roda kemudi BUSSID.
             val steps = 6
             for (i in 1..steps) {
                 val theta = startAngle + (endAngle - startAngle) * (i / steps.toFloat())
@@ -126,9 +132,45 @@ class TouchAccessibilityService : AccessibilityService() {
             }
         }
 
-        val stroke = GestureDescription.StrokeDescription(path, 0, 25L)
-        val gesture = GestureDescription.Builder().addStroke(stroke).build()
-        dispatchGesture(gesture, null, null)
+        try {
+            val stroke = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val prevStroke = currentSteeringStroke
+                if (isSteeringTouching && prevStroke != null) {
+                    prevStroke.continueStroke(path, 0, 45L, willContinue)
+                } else {
+                    GestureDescription.StrokeDescription(path, 0, 45L, willContinue)
+                }
+            } else {
+                GestureDescription.StrokeDescription(path, 0, 45L)
+            }
+
+            val gesture = GestureDescription.Builder().addStroke(stroke).build()
+            dispatchGesture(gesture, object : AccessibilityService.GestureResultCallback() {
+                override fun onCompleted(gestureDescription: GestureDescription?) {
+                    super.onCompleted(gestureDescription)
+                    if (willContinue) {
+                        currentSteeringStroke = stroke
+                        isSteeringTouching = true
+                    } else {
+                        currentSteeringStroke = null
+                        isSteeringTouching = false
+                    }
+                }
+
+                override fun onCancelled(gestureDescription: GestureDescription?) {
+                    super.onCancelled(gestureDescription)
+                    currentSteeringStroke = null
+                    isSteeringTouching = false
+                }
+            }, null)
+        } catch (e: Exception) {
+            currentSteeringStroke = null
+            isSteeringTouching = false
+            // Fallback gesture sederhana jika API continueStroke mengalami limitasi
+            val fallbackStroke = GestureDescription.StrokeDescription(path, 0, 40L)
+            val fallbackGesture = GestureDescription.Builder().addStroke(fallbackStroke).build()
+            dispatchGesture(fallbackGesture, null, null)
+        }
     }
 
     /**
@@ -177,8 +219,10 @@ class TouchAccessibilityService : AccessibilityService() {
     /**
      * Jalur multi-titik untuk perpindahan gigi presisi H-gate:
      * Menyusuri lorong H lalu menahan sentuhan di slot target (dwell time) agar Unity collider BUSSID mengunci gigi.
+     * Durasi drag diperlambat sedikit (180ms - 220ms) agar bola shifter kuning BUSSID benar-benar ditarik
+     * menyusuri lorong dan tidak dianggap glitch / sentuhan kilat oleh game.
      */
-    fun injectMultiPointPath(points: List<Pair<Float, Float>>, durationMs: Long = 70L, holdAtEndMs: Long = 60L) {
+    fun injectMultiPointPath(points: List<Pair<Float, Float>>, durationMs: Long = 180L, holdAtEndMs: Long = 120L) {
         if (points.size < 2) return
         val path = Path().apply {
             moveTo(points[0].first, points[0].second)
