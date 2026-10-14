@@ -3,198 +3,198 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/bg_dark"
+    android:background="#151520"
     android:fillViewport="true">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="20dp">
+        android:padding="16dp">
 
-        <!-- Header Banner -->
+        <!-- Top Bar Header Senada GUI Python -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:layout_marginBottom="20dp">
+            android:background="#20202E"
+            android:padding="14dp"
+            android:layout_marginBottom="14dp">
 
             <TextView
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="PXN V9 GEN 2"
-                android:textColor="@color/text_primary"
-                android:textSize="22sp"
-                android:textStyle="bold"
-                android:letterSpacing="0.05" />
+                android:text="🕹️ BUSSID STEERING &amp; H-SHIFTER MAPPER"
+                android:textColor="#06D6A0"
+                android:textSize="14sp"
+                android:textStyle="bold" />
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="BUSSID PRO"
-                android:textColor="@color/primary_accent"
-                android:textSize="13sp"
+                android:text="MOBILE PRO"
+                android:textColor="#FFFFFF"
+                android:textSize="11sp"
                 android:textStyle="bold"
-                android:background="#2200E676"
-                android:paddingHorizontal="10dp"
+                android:background="#3A86FF"
+                android:paddingHorizontal="8dp"
                 android:paddingVertical="4dp" />
         </LinearLayout>
 
-        <!-- Status Cards Container -->
+        <!-- Hardware & Steering Wheel Device Card -->
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            app:cardCornerRadius="16dp"
-            app:cardBackgroundColor="@color/card_dark"
-            app:strokeColor="@color/card_dark_stroke"
+            app:cardCornerRadius="12dp"
+            app:cardBackgroundColor="#1E1E2D"
+            app:strokeColor="#2C3848"
             app:strokeWidth="1dp"
-            android:layout_marginBottom="16dp">
+            android:layout_marginBottom="12dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:padding="16dp">
+                android:padding="14dp">
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="HARDWARE STATUS"
-                    android:textColor="@color/text_secondary"
+                    android:text="🎮 STATUS STEERING WHEEL &amp; SHIFTER"
+                    android:textColor="#FCA311"
                     android:textSize="11sp"
                     android:textStyle="bold"
-                    android:letterSpacing="0.1"
-                    android:layout_marginBottom="8dp" />
+                    android:letterSpacing="0.05"
+                    android:layout_marginBottom="6dp" />
 
                 <TextView
                     android:id="@+id/tvDeviceStatus"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Memeriksa perangkat kemudi..."
-                    android:textColor="@color/text_primary"
-                    android:textSize="14sp"
-                    android:layout_marginBottom="12dp" />
+                    android:text="Mencari perangkat kemudi..."
+                    android:textColor="#00FF66"
+                    android:textSize="13sp"
+                    android:textStyle="bold"
+                    android:layout_marginBottom="10dp" />
 
                 <View
                     android:layout_width="match_parent"
                     android:layout_height="1dp"
-                    android:background="@color/card_dark_stroke"
-                    android:layout_marginBottom="12dp" />
+                    android:background="#2C3848"
+                    android:layout_marginBottom="10dp" />
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="SERVICE INJECTION"
-                    android:textColor="@color/text_secondary"
+                    android:text="⚡ SERVICE INJECTION STATUS"
+                    android:textColor="#A0C4FF"
                     android:textSize="11sp"
                     android:textStyle="bold"
-                    android:letterSpacing="0.1"
-                    android:layout_marginBottom="8dp" />
+                    android:layout_marginBottom="6dp" />
 
                 <TextView
                     android:id="@+id/tvServiceStatus"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="Accessibility Service: Memeriksa..."
-                    android:textColor="@color/text_primary"
-                    android:textSize="14sp" />
+                    android:textColor="#EDF2F4"
+                    android:textSize="13sp" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- Quick Setup Permissions Card -->
+        <!-- Permission Setup Card -->
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            app:cardCornerRadius="16dp"
-            app:cardBackgroundColor="@color/card_dark"
-            app:strokeColor="@color/card_dark_stroke"
+            app:cardCornerRadius="12dp"
+            app:cardBackgroundColor="#1E1E2D"
+            app:strokeColor="#2C3848"
             app:strokeWidth="1dp"
-            android:layout_marginBottom="20dp">
+            android:layout_marginBottom="12dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:padding="16dp">
+                android:padding="14dp">
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="PENGATURAN IZIN SISTEM"
-                    android:textColor="@color/text_secondary"
+                    android:text="🔐 IZIN SISTEM (WAJIB DIAKTIFKAN)"
+                    android:textColor="#FCA311"
                     android:textSize="11sp"
                     android:textStyle="bold"
-                    android:letterSpacing="0.1"
-                    android:layout_marginBottom="12dp" />
+                    android:layout_marginBottom="10dp" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnGrantAccessibility"
                     android:layout_width="match_parent"
-                    android:layout_height="52dp"
-                    android:text="1. Izinkan Accessibility Service"
-                    android:textColor="@color/text_primary"
-                    app:backgroundTint="#263238"
-                    app:cornerRadius="12dp"
-                    android:layout_marginBottom="10dp"
+                    android:layout_height="48dp"
+                    android:text="1. Izinkan Accessibility Service (Injeksi Sentuhan)"
+                    android:textColor="#FFFFFF"
+                    app:backgroundTint="#4F5D75"
+                    app:cornerRadius="8dp"
+                    android:layout_marginBottom="8dp"
                     android:textAllCaps="false" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnGrantOverlay"
                     android:layout_width="match_parent"
-                    android:layout_height="52dp"
+                    android:layout_height="48dp"
                     android:text="2. Izinkan Tampil di Atas Aplikasi Lain"
-                    android:textColor="@color/text_primary"
-                    app:backgroundTint="#263238"
-                    app:cornerRadius="12dp"
+                    android:textColor="#FFFFFF"
+                    app:backgroundTint="#4F5D75"
+                    app:cornerRadius="8dp"
                     android:textAllCaps="false" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- Advanced Features (Calibration & Zero Latency) -->
+        <!-- Calibration & Tools -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:layout_marginBottom="24dp">
+            android:layout_marginBottom="16dp">
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnCalibrateHardware"
                 android:layout_width="0dp"
-                android:layout_height="54dp"
+                android:layout_height="50dp"
                 android:layout_weight="1"
-                android:text="🔧 Kalibrasi Axis"
-                android:textColor="@color/text_primary"
-                app:backgroundTint="#1565C0"
-                app:cornerRadius="12dp"
+                android:text="🎯 Kalibrasi Axis"
+                android:textColor="#FFFFFF"
+                app:backgroundTint="#3A86FF"
+                app:cornerRadius="8dp"
                 android:layout_marginEnd="6dp"
                 android:textAllCaps="false" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnToggleAdb"
                 android:layout_width="0dp"
-                android:layout_height="54dp"
+                android:layout_height="50dp"
                 android:layout_weight="1"
                 android:text="⚡ ADB 0ms Delay"
-                android:textColor="@color/text_primary"
-                app:backgroundTint="#37474F"
-                app:cornerRadius="12dp"
+                android:textColor="#FFFFFF"
+                app:backgroundTint="#2B2D42"
+                app:cornerRadius="8dp"
                 android:layout_marginStart="6dp"
                 android:textAllCaps="false" />
         </LinearLayout>
 
-        <!-- Launch Mapper Main CTA Button -->
+        <!-- Main Button: Start Keymapper -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnToggleOverlay"
             android:layout_width="match_parent"
-            android:layout_height="60dp"
-            android:text="Mulai Keymapper (Buka Overlay)"
-            android:textSize="16sp"
+            android:layout_height="56dp"
+            android:text="🎮 MINIMIZE &amp; BUKA GAME (UNTUK MAIN)"
+            android:textSize="14sp"
             android:textStyle="bold"
-            android:textColor="#000000"
-            app:backgroundTint="@color/primary_accent"
-            app:cornerRadius="14dp"
+            android:textColor="#111111"
+            app:backgroundTint="#06D6A0"
+            app:cornerRadius="10dp"
             android:textAllCaps="false" />
 
     </LinearLayout>
