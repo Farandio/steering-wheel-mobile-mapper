@@ -54,6 +54,19 @@ class TouchAccessibilityService : AccessibilityService() {
     // =========================================================================
 
     /**
+     * Lepaskan semua sentuhan virtual yang sedang tertahan (Gas, Rem, Setir)
+     * Dipanggil saat mapping di-pause agar user bisa mengoperasikan layar HP dengan normal.
+     */
+    fun releaseAllTouches() {
+        gasStroke = null
+        isGasTouching = false
+        brakeStroke = null
+        isBrakeTouching = false
+        currentSteeringStroke = null
+        isSteeringTouching = false
+    }
+
+    /**
      * 1. Single Tap (Klakson, Lampu, Hazard, Pintu, Wiper, dll)
      */
     fun injectTap(x: Float, y: Float, durationMs: Long = 40L) {

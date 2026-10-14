@@ -40,6 +40,9 @@ object MappingManager {
     private const val KEY_PROFILE_LIST = "profile_names_list"
     private const val KEY_ACTIVE_PROFILE = "active_profile_name"
 
+    // Status Pause / Resume Mapping (Agar user bisa navigasi HP / buka menu game tanpa sentuhan tertahan)
+    var isMappingPaused: Boolean = false
+
     // Shizuku / Root Injection Mode Flag
     var useAdbZeroLatencyMode: Boolean = false
 
@@ -50,6 +53,10 @@ object MappingManager {
     var isClutchDepressed: Boolean = false
     var lastGearBeforeClutch: String? = null
     var onClutchChanged: ((isDepressed: Boolean) -> Unit)? = null
+
+    fun releaseAllTouches() {
+        TouchAccessibilityService.instance?.releaseAllTouches()
+    }
 
     init {
         setupDefaultBussidProfile()
@@ -516,6 +523,11 @@ object MappingManager {
             }
         }
 
+        // Jika sedang di-pause oleh user (misal untuk navigasi HP / chatting / buka menu):
+        if (isMappingPaused) {
+            return false
+        }
+
         val service = TouchAccessibilityService.instance ?: return false
 
         // Membaca semua event MotionEvent dari perangkat eksternal USB / OTG tanpa filter ketat
@@ -695,6 +707,10 @@ object MappingManager {
                 keyListenCallback = null
             }
             return true
+        }
+
+        if (isMappingPaused) {
+            return false
         }
 
         val service = TouchAccessibilityService.instance ?: return false

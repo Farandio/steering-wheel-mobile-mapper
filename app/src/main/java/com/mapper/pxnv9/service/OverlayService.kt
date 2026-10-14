@@ -144,13 +144,46 @@ class OverlayService : Service() {
             setTextColor(Color.YELLOW)
             textSize = 13f
         }
+
+        // Tombol Pause / Play Mapping agar user bisa navigasi HP tanpa sentuhan ter-hold
+        val btnPauseResume = Button(this).apply {
+            text = "⏸️ PAUSE"
+            textSize = 11f
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.parseColor("#E6C62828")) // Merah gelap
+            setPadding(12, 4, 12, 4)
+            val lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                leftMargin = 16
+            }
+            layoutParams = lp
+
+            setOnClickListener {
+                MappingManager.isMappingPaused = !MappingManager.isMappingPaused
+                if (MappingManager.isMappingPaused) {
+                    MappingManager.releaseAllTouches()
+                    text = "▶️ PLAY"
+                    setBackgroundColor(Color.parseColor("#E62E7D32")) // Hijau resume
+                    Toast.makeText(this@OverlayService, "Mapping DI-PAUSE. Navigasi HP bebas!", Toast.LENGTH_SHORT).show()
+                } else {
+                    text = "⏸️ PAUSE"
+                    setBackgroundColor(Color.parseColor("#E6C62828"))
+                    Toast.makeText(this@OverlayService, "Mapping RESUME aktif kembali!", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+
         pillLayout.addView(tvTitle)
         pillLayout.addView(tvLiveHud)
+        pillLayout.addView(btnPauseResume)
 
         // Helper untuk format teks HUD
         fun refreshHudText(angle: Float = 0f, gear: String = MappingManager.currentGear) {
             val clutchIndicator = if (MappingManager.isClutchDepressed) " (CLUTCH)" else ""
-            tvLiveHud.text = " [${angle.toInt()}° | $gear$clutchIndicator]"
+            val pauseIndicator = if (MappingManager.isMappingPaused) " [PAUSED]" else ""
+            tvLiveHud.text = " [${angle.toInt()}° | $gear$clutchIndicator]$pauseIndicator"
         }
 
         // Observer untuk update HUD live
