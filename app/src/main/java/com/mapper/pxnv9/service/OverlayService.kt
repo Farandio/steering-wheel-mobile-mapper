@@ -50,8 +50,8 @@ class OverlayService : Service() {
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         MappingManager.loadCustomMapping(this)
 
-        setupFloatingPill()
         setupMotionInterceptor()
+        setupFloatingPill()
     }
 
     /**
@@ -151,7 +151,9 @@ class OverlayService : Service() {
             textSize = 11f
             setTextColor(Color.WHITE)
             setBackgroundColor(Color.parseColor("#E6C62828")) // Merah gelap
-            setPadding(12, 4, 12, 4)
+            setPadding(16, 8, 16, 8)
+            isClickable = true
+            isFocusable = false
             val lp = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -160,7 +162,7 @@ class OverlayService : Service() {
             }
             layoutParams = lp
 
-            setOnClickListener {
+            fun togglePause() {
                 MappingManager.isMappingPaused = !MappingManager.isMappingPaused
                 if (MappingManager.isMappingPaused) {
                     MappingManager.releaseAllTouches()
@@ -172,6 +174,17 @@ class OverlayService : Service() {
                     setBackgroundColor(Color.parseColor("#E6C62828"))
                     Toast.makeText(this@OverlayService, "Mapping RESUME aktif kembali!", Toast.LENGTH_SHORT).show()
                 }
+            }
+
+            setOnClickListener {
+                togglePause()
+            }
+
+            setOnTouchListener { v, event ->
+                if (event.action == MotionEvent.ACTION_UP) {
+                    v.performClick()
+                }
+                true
             }
         }
 
