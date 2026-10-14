@@ -496,12 +496,8 @@ object MappingManager {
     fun processMotionEvent(event: MotionEvent, context: Context? = null): Boolean {
         val service = TouchAccessibilityService.instance ?: return false
 
-        val source = event.source
-        if ((source and InputDevice.SOURCE_JOYSTICK) != InputDevice.SOURCE_JOYSTICK &&
-            (source and InputDevice.SOURCE_GAMEPAD) != InputDevice.SOURCE_GAMEPAD
-        ) {
-            return false
-        }
+        // Membaca semua event MotionEvent dari perangkat eksternal USB / OTG tanpa filter ketat
+        // Persis seperti cara kerja WinMM joyGetPosEx di Python
 
         // 1. Setir Kemudi Axis X (900 Derajat)
         val steeringWidget = activeWidgets.firstOrNull { it.type == MappingType.STEERING_WHEEL }

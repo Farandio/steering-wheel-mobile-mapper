@@ -215,18 +215,32 @@ class MainActivity : AppCompatActivity() {
 
         for (id in deviceIds) {
             val device = inputManager.getInputDevice(id) ?: continue
+            if (device.isVirtual) continue
             val sources = device.sources
-            if ((sources and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD ||
-                (sources and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK
-            ) {
-                connectedNames.add("${device.name} (ID: $id)")
+            val isController = (sources and InputDevice.SOURCE_GAMEPAD) != 0 ||
+                               (sources and InputDevice.SOURCE_JOYSTICK) != 0 ||
+                               (sources and InputDevice.SOURCE_KEYBOARD) != 0
+
+            if (isController) {
+                connectedNames.add("🎮 ${device.name} (ID: $id)")
+            }
+        }
+
+        // Cek juga via UsbManager untuk perangkat OTG langsung
+        val usbManager = getSystemService(Context.USB_SERVICE) as? android.hardware.usb.UsbManager
+        usbManager?.deviceList?.values?.forEach { usbDev ->
+            val desc = "🔌 USB: ${usbDev.productName ?: usbDev.deviceName} [VID:${Integer.toHexString(usbDev.vendorId)}:PID:${Integer.toHexString(usbDev.productId)}]"
+            if (!connectedNames.contains(desc)) {
+                connectedNames.add(desc)
             }
         }
 
         if (connectedNames.isNotEmpty()) {
             tvDeviceStatus.text = "Steering Wheel Terdeteksi:\n" + connectedNames.joinToString("\n")
+            tvDeviceStatus.setTextColor(android.graphics.Color.parseColor("#00FF66"))
         } else {
-            tvDeviceStatus.text = "Steering Wheel: Tidak ada Gamepad/Wheel terhubung"
+            tvDeviceStatus.text = "Steering Wheel: Tidak ada Gamepad/Wheel terhubung\n(Pastikan OTG aktif di Pengaturan HP)"
+            tvDeviceStatus.setTextColor(android.graphics.Color.parseColor("#FF5252"))
         }
     }
 }
