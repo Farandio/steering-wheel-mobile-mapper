@@ -86,7 +86,6 @@ class TouchAccessibilityService : AccessibilityService() {
         dispatchGesture(gesture, null, null)
     }
 
-    /**
     // State pelacak stroke sentuhan kontinu (Continuous Drag) untuk setir kemudi
     private var currentSteeringStroke: GestureDescription.StrokeDescription? = null
     private var isSteeringTouching: Boolean = false
