@@ -23,8 +23,8 @@ object MappingManager {
 
     val activeWidgets = mutableListOf<MappingWidget>()
 
-    // Callback saat user sedang mendengarkan tombol hardware di edit mode
-    var keyListenCallback: ((keyCode: Int, keyName: String) -> Unit)? = null
+    // Callback saat user sedang mendengarkan tombol hardware di edit mode (keyCode, scanCode, keyName)
+    var keyListenCallback: ((keyCode: Int, scanCode: Int, keyName: String) -> Unit)? = null
 
     // Live Input Observers untuk HUD
     var onSteeringAngleChanged: ((degrees: Float, normalized: Float) -> Unit)? = null
@@ -208,6 +208,7 @@ object MappingManager {
                 put("pedalTravelDistance", w.pedalTravelDistance)
                 put("deadzone", w.deadzone)
                 put("boundKeyCode", w.boundKeyCode)
+                put("boundScanCode", w.boundScanCode)
                 put("boundKeyName", w.boundKeyName)
                 put("boundAxis", w.boundAxis)
                 put("requireClutchToShift", w.requireClutchToShift)
@@ -227,6 +228,12 @@ object MappingManager {
                     gearBindingsObj.put(gear, code)
                 }
                 put("gearKeyBindings", gearBindingsObj)
+
+                val gearScanBindingsObj = JSONObject()
+                for ((gear, scode) in w.gearScanCodeBindings) {
+                    gearScanBindingsObj.put(gear, scode)
+                }
+                put("gearScanCodeBindings", gearScanBindingsObj)
 
                 val gearNamesObj = JSONObject()
                 for ((gear, name) in w.gearKeyNames) {
@@ -268,6 +275,7 @@ object MappingManager {
                     pedalTravelDistance = obj.optDouble("pedalTravelDistance", 160.0).toFloat(),
                     deadzone = obj.optDouble("deadzone", 0.03).toFloat(),
                     boundKeyCode = obj.optInt("boundKeyCode", -1),
+                    boundScanCode = obj.optInt("boundScanCode", -1),
                     boundKeyName = obj.optString("boundKeyName", "None"),
                     boundAxis = obj.optInt("boundAxis", -1),
                     requireClutchToShift = obj.optBoolean("requireClutchToShift", true)
@@ -292,6 +300,15 @@ object MappingManager {
                     while (keys.hasNext()) {
                         val k = keys.next()
                         widget.gearKeyBindings[k] = gearBindingsObj.getInt(k)
+                    }
+                }
+
+                val gearScanBindingsObj = obj.optJSONObject("gearScanCodeBindings")
+                if (gearScanBindingsObj != null) {
+                    val keys = gearScanBindingsObj.keys()
+                    while (keys.hasNext()) {
+                        val k = keys.next()
+                        widget.gearScanCodeBindings[k] = gearScanBindingsObj.getInt(k)
                     }
                 }
 
@@ -478,14 +495,22 @@ object MappingManager {
 
     fun processKeyEvent(event: KeyEvent, context: Context? = null): Boolean {
         val keyCode = event.keyCode
+        val scanCode = event.scanCode
         val action = event.action
+
+        // Format nama tombol yang ramah & tidak pernah hanya "UNKNOWN"
+        val rawName = KeyEvent.keyCodeToString(keyCode).removePrefix("KEYCODE_")
+        val readableName = if (rawName == "UNKNOWN" || keyCode == KeyEvent.KEYCODE_UNKNOWN) {
+            if (scanCode > 0) "Button (Scan $scanCode)" else "Button (ID $keyCode)"
+        } else {
+            rawName
+        }
 
         // Jika user sedang menunggu input tombol hardware pada dialog "Tekan tombol di setir..."
         val listener = keyListenCallback
         if (listener != null) {
             if (action == KeyEvent.ACTION_DOWN) {
-                val name = KeyEvent.keyCodeToString(keyCode).removePrefix("KEYCODE_")
-                listener(keyCode, name)
+                listener(keyCode, scanCode, readableName)
                 keyListenCallback = null
             }
             return true
@@ -493,9 +518,11 @@ object MappingManager {
 
         val service = TouchAccessibilityService.instance ?: return false
 
-        // Tap Tombol Kustom & Macro
+        // Tap Tombol Kustom & Macro (Cocokkan KeyCode ATAU ScanCode untuk tombol UNKNOWN)
         val tapWidget = activeWidgets.firstOrNull {
-            (it.type == MappingType.TAP || it.type == MappingType.MACRO_TAP) && it.boundKeyCode == keyCode
+            (it.type == MappingType.TAP || it.type == MappingType.MACRO_TAP) &&
+            ((it.boundKeyCode != -1 && it.boundKeyCode != KeyEvent.KEYCODE_UNKNOWN && it.boundKeyCode == keyCode) ||
+             (it.boundScanCode != -1 && it.boundScanCode == scanCode))
         }
         if (tapWidget != null) {
             if (action == KeyEvent.ACTION_DOWN) {
@@ -512,7 +539,7 @@ object MappingManager {
         // H-Shifter Presisi (BUSSID Live Knob Tracking & Constrained H-Rail)
         val shifterWidget = activeWidgets.firstOrNull { it.type == MappingType.SHIFTER_SLIDER }
         if (shifterWidget != null) {
-            val targetGear = mapKeyCodeToGear(keyCode)
+            val targetGear = mapKeyCodeToGear(keyCode, scanCode)
             if (targetGear != null) {
                 val neutralX = shifterWidget.centerPoint.x
                 val neutralY = shifterWidget.centerPoint.y
@@ -596,11 +623,20 @@ object MappingManager {
         return false
     }
 
-    fun mapKeyCodeToGear(keyCode: Int): String? {
+    fun mapKeyCodeToGear(keyCode: Int, scanCode: Int = 0): String? {
         val shifterWidget = activeWidgets.firstOrNull { it.type == MappingType.SHIFTER_SLIDER }
-        if (shifterWidget != null && shifterWidget.gearKeyBindings.isNotEmpty()) {
-            for ((gear, boundCode) in shifterWidget.gearKeyBindings) {
-                if (boundCode == keyCode) return gear
+        if (shifterWidget != null) {
+            // Prioritas 1: Cek scanCode jika tombol terdeteksi sebagai UNKNOWN
+            if (scanCode > 0 && shifterWidget.gearScanCodeBindings.isNotEmpty()) {
+                for ((gear, boundScan) in shifterWidget.gearScanCodeBindings) {
+                    if (boundScan == scanCode) return gear
+                }
+            }
+            // Prioritas 2: Cek keyCode manual
+            if (shifterWidget.gearKeyBindings.isNotEmpty()) {
+                for ((gear, boundCode) in shifterWidget.gearKeyBindings) {
+                    if (boundCode != -1 && boundCode != KeyEvent.KEYCODE_UNKNOWN && boundCode == keyCode) return gear
+                }
             }
         }
 

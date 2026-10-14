@@ -113,12 +113,17 @@ class TouchAccessibilityService : AccessibilityService() {
         val startX = centerX + radius * cos(startAngle)
         val startY = centerY + radius * sin(startAngle)
 
-        val endX = centerX + radius * cos(endAngle)
-        val endY = centerY + radius * sin(endAngle)
-
         val path = Path().apply {
             moveTo(startX, startY)
-            lineTo(endX, endY)
+            // Interpolasi beberapa titik di sepanjang busur lingkaran agar sentuhan benar-benar memutar setir,
+            // bukan memotong lurus (chord) ke tengah roda kemudi BUSSID.
+            val steps = 6
+            for (i in 1..steps) {
+                val theta = startAngle + (endAngle - startAngle) * (i / steps.toFloat())
+                val px = centerX + radius * cos(theta)
+                val py = centerY + radius * sin(theta)
+                lineTo(px, py)
+            }
         }
 
         val stroke = GestureDescription.StrokeDescription(path, 0, 25L)

@@ -23,8 +23,9 @@ data class MappingWidget(
     var height: Float = 120f,
     // Khusus Shifter: target koordinat posisi tiap gigi ("R", "1", "2", "3", "4", "5", "6")
     var shifterSlots: MutableMap<String, PointF> = mutableMapOf(),
-    // Binding manual tombol hardware untuk tiap gigi (misal "1" -> KEYCODE_BUTTON_1)
+    // Binding manual tombol hardware untuk tiap gigi (KeyCode atau ScanCode untuk tombol UNKNOWN)
     var gearKeyBindings: MutableMap<String, Int> = mutableMapOf(),
+    var gearScanCodeBindings: MutableMap<String, Int> = mutableMapOf(),
     var gearKeyNames: MutableMap<String, String> = mutableMapOf(),
     // Khusus Steering Wheel:
     var steeringRadius: Float = 180f,     // Radius lingkaran setir virtual BUSSID
@@ -36,8 +37,9 @@ data class MappingWidget(
     var pedalTravelDistance: Float = 160f, // Panjang sapuan slider pedal vertikal di layar (px)
     // Deadzone untuk input axis (-1.0 .. 1.0)
     var deadzone: Float = 0.05f,
-    // Binding hardware (KeyCode dari tombol PXN V9 atau Axis ID terkalibrasi)
+    // Binding hardware (KeyCode & ScanCode dari tombol PXN V9 atau Axis ID terkalibrasi)
     var boundKeyCode: Int = -1,
+    var boundScanCode: Int = -1,
     var boundKeyName: String = "None",
     var boundAxis: Int = -1,
     // Khusus Shifter / Kopling:

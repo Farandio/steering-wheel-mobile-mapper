@@ -35,6 +35,9 @@ class OverlayService : Service() {
     private var floatButtonView: View? = null
     private var floatParams: WindowManager.LayoutParams? = null
 
+    // Background Joystick MotionEvent Interceptor (Menangkap Axis Setir, Gas, Rem, Kopling saat game aktif)
+    private var motionInterceptorView: View? = null
+
     // Editor Mode (Overlay interaktif)
     private var editorOverlayView: FrameLayout? = null
     private var isEditMode = false
@@ -48,6 +51,41 @@ class OverlayService : Service() {
         MappingManager.loadCustomMapping(this)
 
         setupFloatingPill()
+        setupMotionInterceptor()
+    }
+
+    /**
+     * Window transparan khusus di background untuk menangkap GenericMotionEvents (Axis analog setir & 3 pedal).
+     * Menggunakan FLAG_NOT_TOUCH_MODAL agar game BUSSID tetap dapat disentuh dengan normal,
+     * sambil menerima joystick/wheel events.
+     */
+    private fun setupMotionInterceptor() {
+        if (motionInterceptorView != null) return
+
+        val interceptorParams = WindowManager.LayoutParams(
+            1, // Ukuran 1x1 piksel agar tidak menghalangi sentuhan layar game
+            1,
+            getOverlayWindowType(),
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = 0
+            y = 0
+        }
+
+        motionInterceptorView = View(this).apply {
+            setOnGenericMotionListener { _, event ->
+                MappingManager.processMotionEvent(event, this@OverlayService)
+            }
+        }
+
+        try {
+            windowManager.addView(motionInterceptorView, interceptorParams)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     private fun getOverlayWindowType(): Int {
@@ -487,10 +525,11 @@ class OverlayService : Service() {
                 text = "🎮 Tekan Tuas Gigi $gearName di Shifter..."
                 setOnClickListener {
                     text = "⏳ Masukkan tuas ke Gigi $gearName pada shifter..."
-                    MappingManager.keyListenCallback = { keyCode, keyName ->
+                    MappingManager.keyListenCallback = { keyCode, scanCode, keyName ->
                         shifterWidget.gearKeyBindings[gearName] = keyCode
+                        if (scanCode > 0) shifterWidget.gearScanCodeBindings[gearName] = scanCode
                         shifterWidget.gearKeyNames[gearName] = keyName
-                        tvBound.text = "Tombol Terikat: $keyName (KeyCode: $keyCode)"
+                        tvBound.text = "Tombol Terikat: $keyName"
                         text = "✅ Berhasil Terikat: $keyName"
                         Toast.makeText(this@OverlayService, "Gigi $gearName terikat ke $keyName", Toast.LENGTH_SHORT).show()
                     }
@@ -646,8 +685,9 @@ class OverlayService : Service() {
                     text = "🎮 Tekan Tombol di Setir..."
                     setOnClickListener {
                         text = "⏳ Mendengarkan input tombol PXN..."
-                        MappingManager.keyListenCallback = { keyCode, keyName ->
+                        MappingManager.keyListenCallback = { keyCode, scanCode, keyName ->
                             widget.boundKeyCode = keyCode
+                            widget.boundScanCode = scanCode
                             widget.boundKeyName = keyName
                             Toast.makeText(this@OverlayService, "Tombol Terikat: $keyName", Toast.LENGTH_SHORT).show()
                             editorOverlayView?.let { refreshWidgetViews(it) }
@@ -1183,6 +1223,10 @@ class OverlayService : Service() {
         floatButtonView?.let {
             windowManager.removeView(it)
             floatButtonView = null
+        }
+        motionInterceptorView?.let {
+            windowManager.removeView(it)
+            motionInterceptorView = null
         }
     }
 }
