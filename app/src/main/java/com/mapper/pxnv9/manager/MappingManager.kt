@@ -541,7 +541,8 @@ object MappingManager {
                 baseX = gasWidget.centerPoint.x,
                 baseY = gasWidget.centerPoint.y,
                 travelDistance = gasWidget.pedalTravelDistance,
-                pressure = effGas
+                pressure = effGas,
+                isBrake = false
             )
         }
 
@@ -555,7 +556,8 @@ object MappingManager {
                 baseX = brakeWidget.centerPoint.x,
                 baseY = brakeWidget.centerPoint.y,
                 travelDistance = brakeWidget.pedalTravelDistance,
-                pressure = effBrake
+                pressure = effBrake,
+                isBrake = true
             )
         }
 

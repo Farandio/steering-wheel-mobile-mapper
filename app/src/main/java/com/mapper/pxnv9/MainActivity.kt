@@ -49,6 +49,7 @@ class MainActivity : AppCompatActivity() {
     private var clutchAxis = android.view.MotionEvent.AXIS_Y
 
     private var autoDetectTarget: String? = null
+    private val baselineRawAxes = mutableMapOf<Int, Float>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -75,8 +76,10 @@ class MainActivity : AppCompatActivity() {
 
         // Button Listeners Pedal Gas
         findViewById<Button>(R.id.btnDetectGas).setOnClickListener {
+            baselineRawAxes.clear()
+            baselineRawAxes.putAll(currentRawAxes)
             autoDetectTarget = "gas"
-            Toast.makeText(this, "Injak pedal GAS sekarang...", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Lepas pedal, lalu INJAK pedal GAS sekarang...", Toast.LENGTH_SHORT).show()
         }
         findViewById<Button>(R.id.btnSetGasRest).setOnClickListener {
             gasRest = currentRawAxes[gasAxis] ?: 0f
@@ -89,8 +92,10 @@ class MainActivity : AppCompatActivity() {
 
         // Button Listeners Pedal Rem
         findViewById<Button>(R.id.btnDetectBrake).setOnClickListener {
+            baselineRawAxes.clear()
+            baselineRawAxes.putAll(currentRawAxes)
             autoDetectTarget = "brake"
-            Toast.makeText(this, "Injak pedal REM sekarang...", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Lepas pedal, lalu INJAK pedal REM sekarang...", Toast.LENGTH_SHORT).show()
         }
         findViewById<Button>(R.id.btnSetBrakeRest).setOnClickListener {
             brakeRest = currentRawAxes[brakeAxis] ?: 0f
@@ -103,8 +108,10 @@ class MainActivity : AppCompatActivity() {
 
         // Button Listeners Pedal Kopling
         findViewById<Button>(R.id.btnDetectClutch).setOnClickListener {
+            baselineRawAxes.clear()
+            baselineRawAxes.putAll(currentRawAxes)
             autoDetectTarget = "clutch"
-            Toast.makeText(this, "Injak pedal KOPLING sekarang...", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Lepas pedal, lalu INJAK pedal KOPLING sekarang...", Toast.LENGTH_SHORT).show()
         }
         findViewById<Button>(R.id.btnSetClutchRest).setOnClickListener {
             clutchRest = currentRawAxes[clutchAxis] ?: 0f
@@ -237,32 +244,48 @@ class MainActivity : AppCompatActivity() {
 
         tvRawAllAxes.text = "X: $rawX | Y: $rawY | Z: $rawZ | R: $rawR | U: $rawU | V: $rawV"
 
-        // 3. Auto-Detect Axis Pedal saat tombol Auto-Detect ditekan
+        // 3. Auto-Detect Axis Pedal dengan DELTA DIFFERENCE persis logika Python:
+        // Mencari axis yang mengalami perubahan selisih terbesar dari baseline saat diinjak
         autoDetectTarget?.let { target ->
+            var maxDiff = 0f
+            var detectedAxis = -1
+
             for (ax in axes) {
-                val v = event.getAxisValue(ax)
-                if (kotlin.math.abs(v) > 0.25f) {
-                    val name = android.view.MotionEvent.axisToString(ax).removePrefix("AXIS_")
-                    when (target) {
-                        "gas" -> {
-                            gasAxis = ax
-                            tvGasAxisLabel.text = "Axis: $name"
-                            Toast.makeText(this, "Gas dipasangkan ke Axis $name", Toast.LENGTH_SHORT).show()
-                        }
-                        "brake" -> {
-                            brakeAxis = ax
-                            tvBrakeAxisLabel.text = "Axis: $name"
-                            Toast.makeText(this, "Rem dipasangkan ke Axis $name", Toast.LENGTH_SHORT).show()
-                        }
-                        "clutch" -> {
-                            clutchAxis = ax
-                            tvClutchAxisLabel.text = "Axis: $name"
-                            Toast.makeText(this, "Kopling dipasangkan ke Axis $name", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                    autoDetectTarget = null
-                    break
+                val curVal = event.getAxisValue(ax)
+                val baseVal = baselineRawAxes[ax] ?: 0f
+                val diff = kotlin.math.abs(curVal - baseVal)
+                if (diff > maxDiff) {
+                    maxDiff = diff
+                    detectedAxis = ax
                 }
+            }
+
+            if (maxDiff > 0.20f && detectedAxis != -1) {
+                val name = android.view.MotionEvent.axisToString(detectedAxis).removePrefix("AXIS_")
+                when (target) {
+                    "gas" -> {
+                        gasAxis = detectedAxis
+                        gasRest = baselineRawAxes[detectedAxis] ?: 0f
+                        gasPressed = currentRawAxes[detectedAxis] ?: 1.0f
+                        tvGasAxisLabel.text = "Axis: $name"
+                        Toast.makeText(this, "Gas terdeteksi di Axis $name (Selisih: ${String.format("%.2f", maxDiff)})", Toast.LENGTH_SHORT).show()
+                    }
+                    "brake" -> {
+                        brakeAxis = detectedAxis
+                        brakeRest = baselineRawAxes[detectedAxis] ?: 0f
+                        brakePressed = currentRawAxes[detectedAxis] ?: 1.0f
+                        tvBrakeAxisLabel.text = "Axis: $name"
+                        Toast.makeText(this, "Rem terdeteksi di Axis $name (Selisih: ${String.format("%.2f", maxDiff)})", Toast.LENGTH_SHORT).show()
+                    }
+                    "clutch" -> {
+                        clutchAxis = detectedAxis
+                        clutchRest = baselineRawAxes[detectedAxis] ?: 0f
+                        clutchPressed = currentRawAxes[detectedAxis] ?: 1.0f
+                        tvClutchAxisLabel.text = "Axis: $name"
+                        Toast.makeText(this, "Kopling terdeteksi di Axis $name (Selisih: ${String.format("%.2f", maxDiff)})", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                autoDetectTarget = null
             }
         }
 

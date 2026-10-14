@@ -70,20 +70,36 @@ class TouchAccessibilityService : AccessibilityService() {
         dispatchGesture(gesture, null, null)
     }
 
+    // State tracking untuk continuous touch pedal gas & rem (agar hold klik tidak putus di BUSSID)
+    private var isGasTouching: Boolean = false
+    private var isBrakeTouching: Boolean = false
+
     /**
-     * 2. Analog Progressive Pedal (Pedal Gas / Rem Progresif):
-     * Menggeser sentuhan dari pangkal pedal ke atas/bawah sesuai persentase injakan (0.0f - 1.0f).
-     * Jika dilepas (pressure <= 0.05f), sentuhan diangkat.
+     * 2. Analog Progressive Pedal (Pedal Gas / Rem Touch Hold & Drag):
+     * Menggunakan Touch Hold (tekan dan tahan) pada tombol virtual BUSSID.
+     * Jika pedal diinjak (> 10%), kursor virtual menekan dan menahan tombol pedal di game.
+     * Jika pedal dilepas (<= 10%), sentuhan diangkat secara alami (Touch Up).
      */
-    fun injectPedalAnalog(baseX: Float, baseY: Float, travelDistance: Float, pressure: Float, durationMs: Long = 30L) {
-        val targetY = baseY - (travelDistance * pressure.coerceIn(0f, 1f))
-        val path = Path().apply {
-            moveTo(baseX, baseY)
-            lineTo(baseX, targetY)
+    fun injectPedalAnalog(baseX: Float, baseY: Float, travelDistance: Float, pressure: Float, isBrake: Boolean = false) {
+        val isPressed = pressure > 0.12f
+        val isCurrentlyTouching = if (isBrake) isBrakeTouching else isGasTouching
+
+        if (isPressed) {
+            // Tahan sentuhan pada pedal (Drag vertikal progresif sesuai kedalaman injakan)
+            val targetY = baseY - (travelDistance * pressure.coerceIn(0f, 1f))
+            val path = Path().apply {
+                moveTo(baseX, baseY)
+                lineTo(baseX, targetY)
+            }
+            val stroke = GestureDescription.StrokeDescription(path, 0, 45L)
+            val gesture = GestureDescription.Builder().addStroke(stroke).build()
+            dispatchGesture(gesture, null, null)
+
+            if (isBrake) isBrakeTouching = true else isGasTouching = true
+        } else {
+            // Jika pedal dilepas, biarkan sentuhan berakhir
+            if (isBrake) isBrakeTouching = false else isGasTouching = false
         }
-        val stroke = GestureDescription.StrokeDescription(path, 0, durationMs)
-        val gesture = GestureDescription.Builder().addStroke(stroke).build()
-        dispatchGesture(gesture, null, null)
     }
 
     // State pelacak stroke sentuhan kontinu (Continuous Drag) untuk setir kemudi
