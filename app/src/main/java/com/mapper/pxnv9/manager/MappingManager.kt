@@ -638,6 +638,10 @@ object MappingManager {
                             }
                         }
                     }
+                }
+            }
+        }
+
         // 4. Custom TAP / Macro Widgets yang diikat ke Axis Analog (Gas/Rem/Kopling/Trigger)
         for (w in activeWidgets) {
             if ((w.type == MappingType.TAP || w.type == MappingType.MACRO_TAP) && w.boundAxis != -1) {
