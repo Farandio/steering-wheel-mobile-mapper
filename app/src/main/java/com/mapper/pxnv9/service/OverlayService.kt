@@ -62,17 +62,15 @@ class OverlayService : Service() {
     private fun setupMotionInterceptor() {
         if (motionInterceptorView != null) return
 
-        // Ukuran MATCH_PARENT dengan FLAG_NOT_FOCUSABLE | FLAG_NOT_TOUCH_MODAL | FLAG_LAYOUT_NO_LIMITS:
-        // Standar arsitektur game keymapper (Mantis/Panda):
-        // 1. Mencegah game stuck putih (karena FLAG_NOT_FOCUSABLE aktif, SurfaceView Unity tetap memegang fokus rendering grafis).
-        // 2. Sentuhan jari user di layar tetap diteruskan 100% ke game (karena FLAG_NOT_TOUCH_MODAL aktif).
-        // 3. View overlay menerima sinyal hardware joystick (onGenericMotionEvent) dari setir & 3 pedal OTG secara live.
+        // Ukuran MATCH_PARENT dengan FLAG_NOT_FOCUSABLE | FLAG_NOT_TOUCHABLE | FLAG_LAYOUT_NO_LIMITS:
+        // Window ini 100% tembus sentuhan jari (FLAG_NOT_TOUCHABLE), sehingga layar HP dan game BUSSID
+        // tidak pernah terhalang sedikit pun dan bebas diklik di area mana pun.
         val interceptorParams = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
             getOverlayWindowType(),
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+            WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
             WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSPARENT
         ).apply {
@@ -188,8 +186,38 @@ class OverlayService : Service() {
             }
         }
 
+        // Tombol Khusus Edit Mapping (Buka / Tutup Editor Overlay)
+        val btnEditMapper = Button(this).apply {
+            text = "✏️ EDIT"
+            textSize = 11f
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.parseColor("#E61976D2")) // Biru
+            setPadding(14, 8, 14, 8)
+            isClickable = true
+            isFocusable = false
+            val lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                leftMargin = 10
+            }
+            layoutParams = lp
+
+            setOnClickListener {
+                toggleEditMode()
+            }
+
+            setOnTouchListener { v, event ->
+                if (event.action == MotionEvent.ACTION_UP) {
+                    v.performClick()
+                }
+                true
+            }
+        }
+
         pillLayout.addView(tvTitle)
         pillLayout.addView(tvLiveHud)
+        pillLayout.addView(btnEditMapper)
         pillLayout.addView(btnPauseResume)
 
         // Helper untuk format teks HUD
