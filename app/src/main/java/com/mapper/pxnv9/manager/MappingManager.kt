@@ -553,12 +553,25 @@ object MappingManager {
         }
 
         // 2. Pedal Gas & Rem (Progresif Analog & Dynamic Bound Axis)
+        // Mendukung berbagai rentang hardware pedal OTG (0..1 atau -1..1):
+        fun normalizePedal(rawVal: Float, deadzone: Float): Float {
+            // Jika rentang pedal -1.0 (dilepas) sampai 1.0 (diinjak):
+            val normVal = if (rawVal < 0f) {
+                // rentang -1.0..1.0 dinormalisasi ke 0.0..1.0
+                ((rawVal + 1.0f) / 2.0f).coerceIn(0f, 1f)
+            } else {
+                rawVal.coerceIn(0f, 1f)
+            }
+            return if (normVal < deadzone) 0f else normVal
+        }
+
         val gasWidget = activeWidgets.firstOrNull { it.id == "pedal_gas" }
         if (gasWidget != null) {
             val gasAxis = if (gasWidget.boundAxis != -1) gasWidget.boundAxis else MotionEvent.AXIS_GAS
             var gasVal = event.getAxisValue(gasAxis)
             if (gasVal == 0f && gasWidget.boundAxis == -1) gasVal = event.getAxisValue(MotionEvent.AXIS_RTRIGGER)
-            val effGas = if (gasVal < gasWidget.deadzone) 0f else gasVal
+            if (gasVal == 0f && gasWidget.boundAxis == -1) gasVal = event.getAxisValue(MotionEvent.AXIS_RZ)
+            val effGas = normalizePedal(gasVal, gasWidget.deadzone)
             service.injectPedalAnalog(
                 baseX = gasWidget.centerPoint.x,
                 baseY = gasWidget.centerPoint.y,
@@ -573,7 +586,8 @@ object MappingManager {
             val brakeAxis = if (brakeWidget.boundAxis != -1) brakeWidget.boundAxis else MotionEvent.AXIS_BRAKE
             var brakeVal = event.getAxisValue(brakeAxis)
             if (brakeVal == 0f && brakeWidget.boundAxis == -1) brakeVal = event.getAxisValue(MotionEvent.AXIS_LTRIGGER)
-            val effBrake = if (brakeVal < brakeWidget.deadzone) 0f else brakeVal
+            if (brakeVal == 0f && brakeWidget.boundAxis == -1) brakeVal = event.getAxisValue(MotionEvent.AXIS_Z)
+            val effBrake = normalizePedal(brakeVal, brakeWidget.deadzone)
             service.injectPedalAnalog(
                 baseX = brakeWidget.centerPoint.x,
                 baseY = brakeWidget.centerPoint.y,

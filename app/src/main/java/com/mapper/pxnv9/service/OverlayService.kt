@@ -62,13 +62,15 @@ class OverlayService : Service() {
     private fun setupMotionInterceptor() {
         if (motionInterceptorView != null) return
 
+        // Window overlay transparan dengan FLAG_NOT_TOUCH_MODAL dan FLAG_WATCH_OUTSIDE_TOUCH:
+        // Memungkinkan window menerima GenericMotionEvent (Joystick/Wheel analog) dari Android OS
+        // tanpa memblokir sentuhan jari user pada game (touch events di luar bounds diteruskan ke game).
         val interceptorParams = WindowManager.LayoutParams(
-            0,
-            0,
+            1,
+            1,
             getOverlayWindowType(),
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-            WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+            WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
             PixelFormat.TRANSPARENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
@@ -77,6 +79,8 @@ class OverlayService : Service() {
         }
 
         motionInterceptorView = View(this).apply {
+            isFocusable = true
+            isFocusableInTouchMode = true
             setBackgroundColor(Color.TRANSPARENT)
             setOnGenericMotionListener { _, event ->
                 MappingManager.processMotionEvent(event, this@OverlayService)
@@ -88,6 +92,7 @@ class OverlayService : Service() {
 
         try {
             windowManager.addView(motionInterceptorView, interceptorParams)
+            motionInterceptorView?.requestFocus()
         } catch (e: Exception) {
             e.printStackTrace()
         }
