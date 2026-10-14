@@ -92,8 +92,10 @@ class TouchAccessibilityService : AccessibilityService() {
 
     /**
      * 3. Setir Rotasi 900 Derajat (Circular Continuous Touch & Drag):
-     * Jari virtual terus menempel di lingkaran setir BUSSID (Hold & Drag)
-     * saat setir fisik diputar. Saat setir kembali lurus (deadzone), sentuhan dilepas.
+     * Menggunakan rumus trigonometri yang 100% PERSIS dengan wheel_overlay_mapper.py di PC:
+     * theta_rad = radians(angle_deg - 90)
+     * screen_x = cx + int(r * cos(theta_rad))
+     * screen_y = cy + int(r * sin(theta_rad))
      */
     fun injectCircularSteering(
         centerX: Float,
@@ -105,33 +107,36 @@ class TouchAccessibilityService : AccessibilityService() {
         sensitivity: Float,
         linearity: Float = 1.0f
     ) {
-        val maxRotRadian = (maxDegrees / 2f) * (PI.toFloat() / 180f) * sensitivity
-
-        val curvedFrom = kotlin.math.sign(fromNorm) * kotlin.math.abs(fromNorm).toDouble().let { Math.pow(it, linearity.toDouble()).toFloat() }
-        val curvedTo = kotlin.math.sign(toNorm) * kotlin.math.abs(toNorm).toDouble().let { Math.pow(it, linearity.toDouble()).toFloat() }
-
-        val startAngle = -PI.toFloat() / 2f + (curvedFrom * maxRotRadian)
-        val endAngle = -PI.toFloat() / 2f + (curvedTo * maxRotRadian)
-
-        val startX = centerX + radius * cos(startAngle)
-        val startY = centerY + radius * sin(startAngle)
-
-        val isBackToCenter = kotlin.math.abs(toNorm) < 0.03f
+        val isBackToCenter = kotlin.math.abs(toNorm) < 0.02f
 
         if (isBackToCenter) {
-            // Setir kembali lurus -> Lepaskan sentuhan jari
             currentSteeringStroke = null
             isSteeringTouching = false
             return
         }
 
+        // Hitung sudut derajat persis seperti Python:
+        val maxAngle = (maxDegrees / 2f) * sensitivity
+        val fromAngleDeg = fromNorm * maxAngle
+        val toAngleDeg = toNorm * maxAngle
+
+        // Rumus posisi persis Python: theta_rad = radians(angle_deg - 90)
+        val fromRad = Math.toRadians((fromAngleDeg - 90.0)).toFloat()
+        val toRad = Math.toRadians((toAngleDeg - 90.0)).toFloat()
+
+        val startX = centerX + (radius * cos(fromRad))
+        val startY = centerY + (radius * sin(fromRad))
+        val endX = centerX + (radius * cos(toRad))
+        val endY = centerY + (radius * sin(toRad))
+
         val path = Path().apply {
             moveTo(startX, startY)
             val steps = 8
             for (i in 1..steps) {
-                val theta = startAngle + (endAngle - startAngle) * (i / steps.toFloat())
-                val px = centerX + radius * cos(theta)
-                val py = centerY + radius * sin(theta)
+                val t = i / steps.toFloat()
+                val curRad = fromRad + (toRad - fromRad) * t
+                val px = centerX + (radius * cos(curRad))
+                val py = centerY + (radius * sin(curRad))
                 lineTo(px, py)
             }
         }
@@ -140,12 +145,12 @@ class TouchAccessibilityService : AccessibilityService() {
             val stroke = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 val prev = currentSteeringStroke
                 if (isSteeringTouching && prev != null) {
-                    prev.continueStroke(path, 0, 60L, true)
+                    prev.continueStroke(path, 0, 45L, true)
                 } else {
-                    GestureDescription.StrokeDescription(path, 0, 60L, true)
+                    GestureDescription.StrokeDescription(path, 0, 45L, true)
                 }
             } else {
-                GestureDescription.StrokeDescription(path, 0, 60L)
+                GestureDescription.StrokeDescription(path, 0, 45L)
             }
 
             val gesture = GestureDescription.Builder().addStroke(stroke).build()
@@ -163,10 +168,9 @@ class TouchAccessibilityService : AccessibilityService() {
                 }
             }, null)
         } catch (e: Exception) {
-            // Fallback gesture jika continueStroke limit
             currentSteeringStroke = null
             isSteeringTouching = false
-            val fallbackStroke = GestureDescription.StrokeDescription(path, 0, 50L)
+            val fallbackStroke = GestureDescription.StrokeDescription(path, 0, 40L)
             val fallbackGesture = GestureDescription.Builder().addStroke(fallbackStroke).build()
             dispatchGesture(fallbackGesture, null, null)
         }

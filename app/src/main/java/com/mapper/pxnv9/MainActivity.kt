@@ -195,7 +195,7 @@ class MainActivity : AppCompatActivity() {
     private val currentRawAxes = mutableMapOf<Int, Float>()
 
     override fun onGenericMotionEvent(event: android.view.MotionEvent): Boolean {
-        // 1. Baca nilai semua axis penting (X, Y, Z, R, RX, RY, GAS, BRAKE, dll)
+        // 1. Baca nilai semua axis Android (termasuk generic, trigger, dan custom OTG)
         val axes = intArrayOf(
             android.view.MotionEvent.AXIS_X,
             android.view.MotionEvent.AXIS_Y,
@@ -209,20 +209,31 @@ class MainActivity : AppCompatActivity() {
             android.view.MotionEvent.AXIS_LTRIGGER,
             android.view.MotionEvent.AXIS_THROTTLE,
             android.view.MotionEvent.AXIS_RUDDER,
-            android.view.MotionEvent.AXIS_WHEEL
+            android.view.MotionEvent.AXIS_WHEEL,
+            android.view.MotionEvent.AXIS_HAT_X,
+            android.view.MotionEvent.AXIS_HAT_Y,
+            android.view.MotionEvent.AXIS_GENERIC_1,
+            android.view.MotionEvent.AXIS_GENERIC_2,
+            android.view.MotionEvent.AXIS_GENERIC_3,
+            android.view.MotionEvent.AXIS_GENERIC_4,
+            android.view.MotionEvent.AXIS_GENERIC_5,
+            android.view.MotionEvent.AXIS_GENERIC_6,
+            android.view.MotionEvent.AXIS_GENERIC_7,
+            android.view.MotionEvent.AXIS_GENERIC_8
         )
 
         for (ax in axes) {
-            currentRawAxes[ax] = event.getAxisValue(ax)
+            val v = event.getAxisValue(ax)
+            currentRawAxes[ax] = v
         }
 
-        // 2. Format baris teks "Nilai Raw Semua Axis: X: ... | Y: ... | Z: ... | R: ... | U: ... | V: ..."
+        // 2. Format baris teks "Nilai Raw Semua Axis" persis WinMM Python (X, Y, Z, R, U, V)
         val rawX = String.format("%.2f", currentRawAxes[android.view.MotionEvent.AXIS_X] ?: 0f)
         val rawY = String.format("%.2f", currentRawAxes[android.view.MotionEvent.AXIS_Y] ?: 0f)
         val rawZ = String.format("%.2f", currentRawAxes[android.view.MotionEvent.AXIS_Z] ?: 0f)
         val rawR = String.format("%.2f", currentRawAxes[android.view.MotionEvent.AXIS_RZ] ?: currentRawAxes[android.view.MotionEvent.AXIS_RTRIGGER] ?: 0f)
-        val rawU = String.format("%.2f", currentRawAxes[android.view.MotionEvent.AXIS_RX] ?: 0f)
-        val rawV = String.format("%.2f", currentRawAxes[android.view.MotionEvent.AXIS_RY] ?: 0f)
+        val rawU = String.format("%.2f", currentRawAxes[android.view.MotionEvent.AXIS_RX] ?: currentRawAxes[android.view.MotionEvent.AXIS_GENERIC_1] ?: 0f)
+        val rawV = String.format("%.2f", currentRawAxes[android.view.MotionEvent.AXIS_RY] ?: currentRawAxes[android.view.MotionEvent.AXIS_GENERIC_2] ?: 0f)
 
         tvRawAllAxes.text = "X: $rawX | Y: $rawY | Z: $rawZ | R: $rawR | U: $rawU | V: $rawV"
 
