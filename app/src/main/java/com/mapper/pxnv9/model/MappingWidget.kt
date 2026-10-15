@@ -2,11 +2,18 @@ package com.mapper.pxnv9.model
 
 enum class MappingType {
     TAP,               // Tombol single tap (klakson, lampu, sein, pintu, wiper, dll)
-    STEERING_WHEEL,    // Rotasi setir 900 / 270 derajat (Arc / circular continuous drag)
+    STEERING_WHEEL,    // Setir (mode RING: arc circular drag / mode TILT: horizontal slider)
     SHIFTER_SLIDER,    // H-Shifter (titik tengah ke posisi gigi 1..6, R)
     PEDAL_ANALOG,      // Pedal gas / rem analog progresif (tinggi injakan menyesuaikan slider layar)
     MACRO_TAP          // Tombol makro beruntun (misal Klakson Telolet / Basuri nada 1-2-3 berulang)
 }
+
+/**
+ * Mode injeksi setir:
+ * RING  — drag melingkar di atas ring setir BUSSID (metode lama, butuh kalibrasi akurat)
+ * TILT  — geser horizontal proporsional (simulasi tilt HP), lebih sederhana & stabil
+ */
+enum class SteeringMode { RING, TILT }
 
 data class PointF(
     var x: Float = 0f,

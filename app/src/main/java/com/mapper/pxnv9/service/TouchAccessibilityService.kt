@@ -12,77 +12,77 @@ import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
 import com.mapper.pxnv9.manager.MappingManager
-import kotlin.math.cos
-import kotlin.math.sin
 
 /**
  * Service injeksi sentuhan via AccessibilityService.dispatchGesture (tanpa Root).
  *
  * ═══════════════════════════════════════════════════════════════════
- * FAKTA KRITIS Android dispatchGesture:
- *   Dua panggilan dispatchGesture() yang tumpang-tindih SALING CANCEL.
- *   → Setir + Pedal HARUS dalam SATU GestureDescription.
- *
- * ARSITEKTUR: SINGLE-DISPATCH CONTINUOUS LOOP
+ * ARSITEKTUR: SINGLE-DISPATCH LOOP + TILT STEERING
  * ═══════════════════════════════════════════════════════════════════
  *
- * Loop berjalan seperti ini (mirip Python poll_controller_loop):
+ * STEERING MODE: TILT (Horizontal Slider)
+ * ──────────────────────────────────────────────────────────────────
+ * Mirip logika tilt HP di BUSSID:
+ *   • Jari ditempatkan di posisi HORIZONTAL proporsional terhadap sudut setir.
+ *   • Putar kiri  → jari bergeser ke kiri  dari tengah slider
+ *   • Putar kanan → jari bergeser ke kanan dari tengah slider
+ *   • Lurus (0°)  → jari hold di tengah slider
+ *   • Jari TIDAK PERNAH diangkat (willContinue=true selalu).
  *
- *   doDispatch()                    ← bangun GestureDescription dari semua state
- *     ↓ dispatchGesture (16ms)
- *   onCompleted()                   ← segera panggil doDispatch() lagi (zero-gap)
- *     ↓
- *   doDispatch()                    ← baca state TERBARU (mungkin berubah)
- *     ↓ dispatchGesture (16ms)
- *   ...
+ * Formula posisi X:
+ *   touchX = steerCX + (norm × steerHalfWidth)
+ *   steerHalfWidth = steerR   ← dipinjam untuk half-width slider
+ *   norm ∈ [-1.0 … +1.0]     ← sudah diperhitungkan MappingManager
+ *                                (termasuk deadzone + sensitivity)
  *
- * Hasilnya: ~62fps, mirip dengan Python poll 10ms + moveTo() langsung.
+ * LOOP ENGINE:
+ *   doDispatch() → dispatchGesture(16ms) → onCompleted → doDispatch()
+ *   Zero-gap → ~62fps → setir + pedal selalu dalam 1 GestureDescription.
+ *   (Multiple dispatchGesture() SALING CANCEL — harus 1 GestureDescription.)
  *
- * STROKE DURATION 16ms (bukan 50ms):
- *   Python moveTo() = instan. Android dispatch punya minimum duration.
- *   16ms adalah nilai terkecil yang stabil → paling mendekati Python.
- *
- * PEDAL = HOLD TOUCH di satu titik (bukan drag):
- *   Python: gas = keyboard W hold (digital on/off, bukan analog drag).
- *   BUSSID mobile: gas button = hold touch → sama persis.
- *   Simpan (x,y) titik pedal → dispatch path: moveTo(x,y) saja.
- *   Tidak ada drag distance → tidak ada lompatan posisi.
- *
- * SETIR always-hold:
- *   Jari setir TIDAK PERNAH dilepas (even saat norm=0).
- *   Python: mouseDown() satu kali → moveTo() terus sampai lurus baru mouseUp().
- *   Android: willContinue=true selalu, sampai releaseAllTouches().
+ * PEDAL:
+ *   Hold touch di satu titik (seperti keyboard W/S di Python).
+ *   Tidak ada drag — cukup touchDown + hold → touchUp saat dilepas.
  * ═══════════════════════════════════════════════════════════════════
  */
 class TouchAccessibilityService : AccessibilityService() {
 
     companion object {
         private const val TAG       = "TouchAccessibility"
-        private const val STROKE_MS = 16L   // ~62fps, mendekati Python 10ms poll
+        private const val STROKE_MS = 16L   // ~62fps
         var instance: TouchAccessibilityService? = null
             private set
     }
 
     // ─────────────────────────────────────────────────────────────
-    // STATE: SETIR
+    // STATE: SETIR (mode TILT / horizontal slider)
+    //
+    // steerCX      = titik tengah slider horizontal di layar BUSSID
+    // steerCY      = Y posisi slider (baris slider di layar)
+    // steerR       = half-width slider (px dari tengah ke tepi kiri/kanan)
+    // steerMaxDeg  = derajat lock-to-lock setir fisik (misal 900°)
+    // steerSens    = sensitivitas (1.0 = normal)
+    //
+    // steerCurrentNorm = norm posisi terakhir yg benar-benar di-dispatch
+    // steerTargetNorm  = norm sensor terbaru (bisa berubah saat loop jalan)
     // ─────────────────────────────────────────────────────────────
-    private var steerCX          = 300f
-    private var steerCY          = 856f
-    private var steerR           = 168f
+    private var steerCX          = 540f   // default: tengah layar 1080p
+    private var steerCY          = 900f   // default: area bawah layar BUSSID
+    private var steerR           = 400f   // default: ±400px dari tengah
     private var steerMaxDeg      = 900f
     private var steerSens        = 1.0f
-    private var steerCurrentNorm = 0f    // posisi terakhir yg di-dispatch
-    private var steerTargetNorm  = 0f    // nilai sensor terbaru
+    private var steerCurrentNorm = 0f
+    private var steerTargetNorm  = 0f
     private var steerActive      = false
     private var steerPrevStroke: GestureDescription.StrokeDescription? = null
 
     // ─────────────────────────────────────────────────────────────
-    // STATE: PEDAL (hold touch di satu titik — bukan drag)
+    // STATE: PEDAL GAS & REM (hold-tap di satu titik)
     // ─────────────────────────────────────────────────────────────
     private var gasX          = 1700f
     private var gasY          = 900f
     private var gasActive     = false
-    private var gasRelease    = false   // kirim 1 dispatch terakhir willContinue=false
+    private var gasRelease    = false
     private var gasPrevStroke: GestureDescription.StrokeDescription? = null
 
     private var brkX          = 1500f
@@ -97,47 +97,40 @@ class TouchAccessibilityService : AccessibilityService() {
     private val handler     = Handler(Looper.getMainLooper())
     private var loopRunning = false
 
-    /**
-     * Mulai loop jika belum berjalan.
-     * Loop berjalan sendiri via onCompleted → doDispatch → onCompleted → ...
-     * Dipanggil kapan saja state berubah (setir/gas/rem diinjak).
-     */
+    /** Mulai loop jika belum berjalan. */
     private fun ensureLoop() {
         if (!loopRunning) {
             loopRunning = true
             doDispatch()
         }
-        // Jika loop sudah berjalan: state terbaru akan dibaca di dispatch berikutnya (< 16ms)
+        // Loop sedang jalan → state terbaru dibaca di siklus berikutnya (< 16ms)
     }
 
     /**
-     * Satu siklus dispatch.
-     * Bangun GestureDescription dari semua finger aktif lalu dispatch.
-     * Di onCompleted, langsung panggil doDispatch() lagi → zero-gap.
+     * Satu siklus dispatch: bangun GestureDescription dari semua finger aktif,
+     * lalu segera panggil doDispatch() lagi dari onCompleted (zero-gap).
      */
     private fun doDispatch() {
-        // Snapshot semua state di awal (sensor bisa berubah kapan saja dari onMotionEvent)
+        // ── Snapshot semua state ─────────────────────────────────
         val snapSteer = steerTargetNorm
         val snapGasX  = gasX;  val snapGasY  = gasY
         val snapBrkX  = brkX;  val snapBrkY  = brkY
 
         val builder = GestureDescription.Builder()
         var count   = 0
-
         var ns: GestureDescription.StrokeDescription? = null
         var ng: GestureDescription.StrokeDescription? = null
         var nb: GestureDescription.StrokeDescription? = null
 
-        // ── Jari Setir ──────────────────────────────────────────
+        // ── Jari Setir (tilt / horizontal slider) ───────────────
         if (steerActive) {
-            val path = buildSteerArc(steerCurrentNorm, snapSteer)
+            val path = buildTiltSlide(steerCurrentNorm, snapSteer)
             ns = makeStroke(steerPrevStroke, path, willContinue = true)
             builder.addStroke(ns)
             count++
         }
 
-        // ── Jari Gas ────────────────────────────────────────────
-        // Pedal = hold touch di satu titik (seperti hold keyboard W di Python)
+        // ── Jari Gas (hold-tap di satu titik) ───────────────────
         if (gasActive || gasRelease) {
             val path = Path().apply { moveTo(snapGasX, snapGasY) }
             ng = makeStroke(gasPrevStroke, path, willContinue = gasActive)
@@ -146,7 +139,7 @@ class TouchAccessibilityService : AccessibilityService() {
             count++
         }
 
-        // ── Jari Rem ────────────────────────────────────────────
+        // ── Jari Rem (hold-tap di satu titik) ───────────────────
         if (brkActive || brkRelease) {
             val path = Path().apply { moveTo(snapBrkX, snapBrkY) }
             nb = makeStroke(brkPrevStroke, path, willContinue = brkActive)
@@ -155,41 +148,27 @@ class TouchAccessibilityService : AccessibilityService() {
             count++
         }
 
-        if (count == 0) {
-            loopRunning = false
-            return
-        }
+        if (count == 0) { loopRunning = false; return }
 
-        val gesture = builder.build()
-        dispatchGesture(gesture, object : GestureResultCallback() {
+        dispatchGesture(builder.build(), object : GestureResultCallback() {
             override fun onCompleted(g: GestureDescription?) {
-                // Update posisi actual setir ke snapshot yang baru saja di-dispatch
+                // Update posisi actual setir → snapshot yang baru saja di-dispatch
                 if (steerActive) { steerCurrentNorm = snapSteer; steerPrevStroke = ns }
                 else               steerPrevStroke = null
 
-                // Update prev-stroke pedal
                 if (gasActive) gasPrevStroke = ng  else gasPrevStroke = null
                 if (brkActive) brkPrevStroke = nb  else brkPrevStroke = null
 
-                // Cek apakah masih ada yang aktif
                 val stillActive = steerActive || gasActive || brkActive ||
-                                  gasRelease || brkRelease
-                if (stillActive) {
-                    // Zero-gap: langsung dispatch berikutnya tanpa delay
-                    doDispatch()
-                } else {
-                    loopRunning = false
-                }
+                                  gasRelease  || brkRelease
+                if (stillActive) doDispatch() else loopRunning = false
             }
 
             override fun onCancelled(g: GestureDescription?) {
-                // Reset semua prev-stroke → gesture berikutnya mulai touch-down baru
+                // Reset prev-stroke → gesture berikutnya mulai touch-down baru
                 steerPrevStroke = null; gasPrevStroke = null; brkPrevStroke = null
                 steerCurrentNorm = snapSteer
-
-                val stillActive = steerActive || gasActive || brkActive
-                if (stillActive) {
-                    // Retry setelah 1 frame
+                if (steerActive || gasActive || brkActive) {
                     handler.postDelayed(::doDispatch, 16L)
                 } else {
                     loopRunning = false
@@ -199,10 +178,33 @@ class TouchAccessibilityService : AccessibilityService() {
     }
 
     // ─────────────────────────────────────────────────────────────
-    // HELPERS
+    // TILT SLIDER PATH
     // ─────────────────────────────────────────────────────────────
 
-    /** Lanjutkan stroke sebelumnya atau buat stroke baru jika belum ada. */
+    /**
+     * Hitung path horizontal dari posisi lama ke posisi baru.
+     *
+     *   touchX = steerCX + (norm × steerR)
+     *   norm ∈ [-1.0 … +1.0]   (sudah diperhitungkan MappingManager)
+     *   steerR = half-width slider (px)
+     *
+     * Contoh: steerCX=540, steerR=400, norm=+0.5 → touchX=740 (ke kanan)
+     *         norm=-1.0 → touchX=140 (full kiri)
+     *         norm=0.0  → touchX=540 (tengah / lurus)
+     */
+    private fun buildTiltSlide(fromNorm: Float, toNorm: Float): Path {
+        val fromX = steerCX + (fromNorm * steerR)
+        val toX   = steerCX + (toNorm   * steerR)
+        return Path().apply {
+            moveTo(fromX, steerCY)
+            lineTo(toX,   steerCY)
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // HELPER
+    // ─────────────────────────────────────────────────────────────
+
     private fun makeStroke(
         prev: GestureDescription.StrokeDescription?,
         path: Path,
@@ -215,21 +217,6 @@ class TouchAccessibilityService : AccessibilityService() {
         return GestureDescription.StrokeDescription(path, 0L, STROKE_MS, willContinue)
     }
 
-    /** Busur setir dari fromNorm ke toNorm (8 titik interpolasi untuk kelancaran). */
-    private fun buildSteerArc(fromNorm: Float, toNorm: Float): Path {
-        val maxAngle = (steerMaxDeg / 2f) * steerSens
-        val fromRad  = Math.toRadians(((fromNorm * maxAngle) - 90.0)).toFloat()
-        val toRad    = Math.toRadians(((toNorm   * maxAngle) - 90.0)).toFloat()
-        return Path().apply {
-            moveTo(steerCX + steerR * cos(fromRad), steerCY + steerR * sin(fromRad))
-            repeat(8) { i ->
-                val t   = (i + 1) / 8f
-                val rad = fromRad + (toRad - fromRad) * t
-                lineTo(steerCX + steerR * cos(rad), steerCY + steerR * sin(rad))
-            }
-        }
-    }
-
     // ─────────────────────────────────────────────────────────────
     // LIFECYCLE
     // ─────────────────────────────────────────────────────────────
@@ -238,9 +225,6 @@ class TouchAccessibilityService : AccessibilityService() {
         super.onServiceConnected()
         instance = this
         Log.i(TAG, "TouchAccessibilityService terhubung.")
-
-        // Daftarkan SOURCE_JOYSTICK|SOURCE_GAMEPAD agar onMotionEvent()
-        // menerima axis setir & pedal OTG.
         try {
             val info = serviceInfo ?: AccessibilityServiceInfo()
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
@@ -256,9 +240,7 @@ class TouchAccessibilityService : AccessibilityService() {
         }
     }
 
-    override fun onAccessibilityEvent(event: android.view.accessibility.AccessibilityEvent?) {
-        // Jangan proses UI tree BUSSID — mencegah Unity freeze
-    }
+    override fun onAccessibilityEvent(event: android.view.accessibility.AccessibilityEvent?) { }
 
     override fun onInterrupt() {
         Log.w(TAG, "TouchAccessibilityService terputus.")
@@ -293,25 +275,36 @@ class TouchAccessibilityService : AccessibilityService() {
     }
 
     // ─────────────────────────────────────────────────────────────
-    // PUBLIC: SETIR
+    // PUBLIC: SETIR (TILT MODE)
     // ─────────────────────────────────────────────────────────────
 
     /**
      * Perbarui target setir.
-     * Dipanggil setiap onMotionEvent() → state di-update, loop membaca di siklus berikutnya.
+     *
+     * [centerX]  = titik X TENGAH slider tilt di layar BUSSID
+     * [centerY]  = titik Y slider
+     * [radius]   = HALF-WIDTH slider (px). Finger bergerak ±radius dari center.
+     *              Sesuaikan agar tidak melewati batas layar:
+     *              centerX - radius ≥ 0  dan  centerX + radius ≤ lebar layar
+     * [toNorm]   = -1.0 (full kiri) .. 0.0 (lurus) .. +1.0 (full kanan)
+     *              (sudah diperhitungkan deadzone & sensitivity oleh MappingManager)
+     *
      * fromNorm DIABAIKAN — service melacak steerCurrentNorm sendiri.
      */
     fun injectCircularSteering(
         centerX: Float, centerY: Float, radius: Float,
-        fromNorm: Float,   // dipertahankan untuk kompatibilitas MappingManager
+        fromNorm: Float,   // kompatibilitas MappingManager — tidak dipakai
         toNorm: Float,
         maxDegrees: Float, sensitivity: Float,
         linearity: Float = 1.0f
     ) {
-        steerCX = centerX; steerCY = centerY; steerR = radius
-        steerMaxDeg = maxDegrees; steerSens = sensitivity
+        steerCX      = centerX
+        steerCY      = centerY
+        steerR       = radius       // dipakai sebagai half-width slider
+        steerMaxDeg  = maxDegrees
+        steerSens    = sensitivity
         steerTargetNorm = toNorm
-        steerActive = true
+        steerActive  = true
         ensureLoop()
     }
 
@@ -320,13 +313,10 @@ class TouchAccessibilityService : AccessibilityService() {
     // ─────────────────────────────────────────────────────────────
 
     /**
-     * Injeksi pedal sebagai HOLD TOUCH di satu titik.
-     * Persis seperti Python: keyboard W/S hold (digital on/off, bukan analog drag).
-     *
-     * pressure > 0.12 → tekan (hold touch di titik pedal)
-     * pressure ≤ 0.12 → lepas (willContinue=false → BUSSID angkat jari)
-     *
-     * travelDistance DIABAIKAN — tidak perlu drag, cukup hold di baseX,baseY.
+     * Injeksi pedal sebagai HOLD TOUCH di satu titik (seperti keyboard W/S Python).
+     * pressure > 0.12 → tekan (touchDown + hold)
+     * pressure ≤ 0.12 → lepas (touchUp)
+     * travelDistance diabaikan — tidak perlu drag.
      */
     fun injectPedalAnalog(
         baseX: Float, baseY: Float,
@@ -336,20 +326,14 @@ class TouchAccessibilityService : AccessibilityService() {
     ) {
         if (isBrake) {
             brkX = baseX; brkY = baseY
-            if (pressure > 0.12f) {
-                brkActive = true
-            } else if (brkActive) {
-                brkActive  = false
-                brkRelease = true
-            } else return
+            if (pressure > 0.12f) { brkActive = true }
+            else if (brkActive)   { brkActive = false; brkRelease = true }
+            else return
         } else {
             gasX = baseX; gasY = baseY
-            if (pressure > 0.12f) {
-                gasActive = true
-            } else if (gasActive) {
-                gasActive  = false
-                gasRelease = true
-            } else return
+            if (pressure > 0.12f) { gasActive = true }
+            else if (gasActive)   { gasActive = false; gasRelease = true }
+            else return
         }
         ensureLoop()
     }
@@ -389,9 +373,6 @@ class TouchAccessibilityService : AccessibilityService() {
         dispatchGesture(GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0L, ms)).build(), null, null)
     }
 
-    /**
-     * Perpindahan gigi multi-titik (H-gate BUSSID).
-     */
     fun injectMultiPointPath(points: List<Pair<Float, Float>>, durationMs: Long = 180L, holdAtEndMs: Long = 120L) {
         if (points.size < 2) return
         val path = Path().apply {
