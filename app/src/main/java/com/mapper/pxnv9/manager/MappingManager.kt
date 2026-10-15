@@ -65,27 +65,21 @@ object MappingManager {
     fun setupDefaultBussidProfile() {
         activeWidgets.clear()
 
-        // 1. Setir BUSSID — MODE TILT (horizontal slider)
-        // centerPoint = titik TENGAH slider tilt di layar BUSSID
-        // steeringRadius = HALF-WIDTH slider (px dari tengah ke tepi)
-        //   → finger bergerak antara (centerX - radius) dan (centerX + radius)
-        //   → norm=-1.0: touchX = centerX - radius (full kiri)
-        //   → norm=+1.0: touchX = centerX + radius (full kanan)
-        //
-        // Kalibrasi: aktifkan mode Tilt di BUSSID, lalu sesuaikan centerPoint
-        // agar posisi finger TENGAH tepat di indikator netral BUSSID.
-        // Default: layar 1080×1920, slider tilt di tengah bawah area kemudi.
+        // 1. Setir BUSSID — MODE RING (drag melingkar di ring setir)
+        // Koordinat terkalibrasi dari sesi PC: X=300, Y=856, Radius=168
+        // CATATAN: Mode "Tilt" BUSSID membaca sensor gyroscope HP — tidak bisa
+        // dikontrol via touch injection tanpa root. Gunakan mode KEMUDI di BUSSID.
         activeWidgets.add(
             MappingWidget(
                 id = "wheel_steering",
-                name = "Setir Kemudi BUSSID (Tilt)",
+                name = "Setir Kemudi BUSSID",
                 type = MappingType.STEERING_WHEEL,
-                centerPoint = PointF(540f, 900f),   // tengah layar 1080p, area bawah
-                width = 800f,                        // total lebar slider (2 × radius)
-                height = 60f,
-                steeringRadius = 400f,               // ±400px dari tengah (half-width)
-                steeringDegrees = 900f,              // lock-to-lock setir fisik PXN V9
-                steeringSensitivity = 1.0f,          // 1.0 = proporsional penuh
+                centerPoint = PointF(300f, 856f),
+                width = 400f,
+                height = 400f,
+                steeringRadius = 168f,
+                steeringDegrees = 900f,
+                steeringSensitivity = 1.0f,
                 deadzone = 0.02f,
                 boundAxis = MotionEvent.AXIS_X
             )

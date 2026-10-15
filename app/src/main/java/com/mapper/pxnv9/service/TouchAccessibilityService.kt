@@ -12,72 +12,60 @@ import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
 import com.mapper.pxnv9.manager.MappingManager
+import kotlin.math.cos
+import kotlin.math.sin
 
 /**
  * Service injeksi sentuhan via AccessibilityService.dispatchGesture (tanpa Root).
  *
  * ═══════════════════════════════════════════════════════════════════
- * ARSITEKTUR: SINGLE-DISPATCH LOOP + TILT STEERING
+ * CATATAN PENTING: Tilt BUSSID ≠ Touch Injection
+ *   Mode "Tilt" BUSSID membaca sensor gyroscope/accelerometer secara
+ *   langsung dari hardware. Kita TIDAK BISA mengontrolnya via
+ *   dispatchGesture (touch injection) tanpa root/system permission.
+ *   → Gunakan mode KEMUDI / RING di BUSSID.
+ *
+ * ARSITEKTUR: SINGLE-DISPATCH LOOP (Ring Mode)
  * ═══════════════════════════════════════════════════════════════════
  *
- * STEERING MODE: TILT (Horizontal Slider)
- * ──────────────────────────────────────────────────────────────────
- * Mirip logika tilt HP di BUSSID:
- *   • Jari ditempatkan di posisi HORIZONTAL proporsional terhadap sudut setir.
- *   • Putar kiri  → jari bergeser ke kiri  dari tengah slider
- *   • Putar kanan → jari bergeser ke kanan dari tengah slider
- *   • Lurus (0°)  → jari hold di tengah slider
- *   • Jari TIDAK PERNAH diangkat (willContinue=true selalu).
+ * Loop: doDispatch() → dispatchGesture(16ms) → onCompleted → doDispatch()
+ *   Zero-gap, ~62fps. Setir + pedal dalam 1 GestureDescription.
+ *   (dispatchGesture() ganda saling cancel → harus 1 GestureDescription.)
  *
- * Formula posisi X:
- *   touchX = steerCX + (norm × steerHalfWidth)
- *   steerHalfWidth = steerR   ← dipinjam untuk half-width slider
- *   norm ∈ [-1.0 … +1.0]     ← sudah diperhitungkan MappingManager
- *                                (termasuk deadzone + sensitivity)
+ * SAFETY: Watchdog auto-release
+ *   Jika tidak ada input wheel selama INPUT_TIMEOUT_MS → lepas semua touch.
+ *   Mencegah layar terblokir ketika setir tidak digerakkan / app di-minimize.
  *
- * LOOP ENGINE:
- *   doDispatch() → dispatchGesture(16ms) → onCompleted → doDispatch()
- *   Zero-gap → ~62fps → setir + pedal selalu dalam 1 GestureDescription.
- *   (Multiple dispatchGesture() SALING CANCEL — harus 1 GestureDescription.)
- *
- * PEDAL:
- *   Hold touch di satu titik (seperti keyboard W/S di Python).
- *   Tidak ada drag — cukup touchDown + hold → touchUp saat dilepas.
+ * SAFETY: isMappingPaused check
+ *   Jika mapping di-pause → loop berhenti → tidak ada touch yang diinjeksi
+ *   → user bisa klik layar normal.
  * ═══════════════════════════════════════════════════════════════════
  */
 class TouchAccessibilityService : AccessibilityService() {
 
     companion object {
-        private const val TAG       = "TouchAccessibility"
-        private const val STROKE_MS = 16L   // ~62fps
+        private const val TAG              = "TouchAccessibility"
+        private const val STROKE_MS        = 16L    // ~62fps
+        private const val INPUT_TIMEOUT_MS = 800L   // auto-release jika wheel diam >800ms
         var instance: TouchAccessibilityService? = null
             private set
     }
 
     // ─────────────────────────────────────────────────────────────
-    // STATE: SETIR (mode TILT / horizontal slider)
-    //
-    // steerCX      = titik tengah slider horizontal di layar BUSSID
-    // steerCY      = Y posisi slider (baris slider di layar)
-    // steerR       = half-width slider (px dari tengah ke tepi kiri/kanan)
-    // steerMaxDeg  = derajat lock-to-lock setir fisik (misal 900°)
-    // steerSens    = sensitivitas (1.0 = normal)
-    //
-    // steerCurrentNorm = norm posisi terakhir yg benar-benar di-dispatch
-    // steerTargetNorm  = norm sensor terbaru (bisa berubah saat loop jalan)
+    // STATE: SETIR (ring arc mode)
     // ─────────────────────────────────────────────────────────────
-    private var steerCX          = 540f   // default: tengah layar 1080p
-    private var steerCY          = 900f   // default: area bawah layar BUSSID
-    private var steerR           = 400f   // default: ±400px dari tengah
+    private var steerCX          = 300f
+    private var steerCY          = 856f
+    private var steerR           = 168f
     private var steerMaxDeg      = 900f
     private var steerSens        = 1.0f
-    private var steerCurrentNorm = 0f
-    private var steerTargetNorm  = 0f
+    private var steerCurrentNorm = 0f    // posisi terakhir yg di-dispatch
+    private var steerTargetNorm  = 0f    // nilai sensor terbaru
     private var steerActive      = false
     private var steerPrevStroke: GestureDescription.StrokeDescription? = null
 
     // ─────────────────────────────────────────────────────────────
-    // STATE: PEDAL GAS & REM (hold-tap di satu titik)
+    // STATE: PEDAL (hold touch di satu titik — bukan drag)
     // ─────────────────────────────────────────────────────────────
     private var gasX          = 1700f
     private var gasY          = 900f
@@ -92,10 +80,25 @@ class TouchAccessibilityService : AccessibilityService() {
     private var brkPrevStroke: GestureDescription.StrokeDescription? = null
 
     // ─────────────────────────────────────────────────────────────
-    // DISPATCH ENGINE
+    // DISPATCH ENGINE + SAFETY
     // ─────────────────────────────────────────────────────────────
     private val handler     = Handler(Looper.getMainLooper())
     private var loopRunning = false
+
+    /**
+     * Watchdog: auto-release semua touch jika wheel tidak bergerak >INPUT_TIMEOUT_MS.
+     * Dicegah agar layar tidak terblokir saat setir diam atau app di-minimize.
+     */
+    private val inputWatchdog = Runnable {
+        Log.d(TAG, "Watchdog: input timeout → releaseAllTouches()")
+        releaseAllTouches()
+    }
+
+    /** Reset watchdog setiap kali ada input dari wheel. */
+    private fun resetWatchdog() {
+        handler.removeCallbacks(inputWatchdog)
+        handler.postDelayed(inputWatchdog, INPUT_TIMEOUT_MS)
+    }
 
     /** Mulai loop jika belum berjalan. */
     private fun ensureLoop() {
@@ -107,10 +110,19 @@ class TouchAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Satu siklus dispatch: bangun GestureDescription dari semua finger aktif,
-     * lalu segera panggil doDispatch() lagi dari onCompleted (zero-gap).
+     * Satu siklus dispatch.
+     *
+     * SAFETY CHECK: jika mapping di-pause → berhenti dan lepas semua touch.
+     * Mencegah touch terinjeksi saat user navigasi HP / buka menu.
      */
     private fun doDispatch() {
+        // ── SAFETY: pause check ──────────────────────────────────
+        if (MappingManager.isMappingPaused) {
+            loopRunning = false
+            releaseAllTouches()
+            return
+        }
+
         // ── Snapshot semua state ─────────────────────────────────
         val snapSteer = steerTargetNorm
         val snapGasX  = gasX;  val snapGasY  = gasY
@@ -122,9 +134,9 @@ class TouchAccessibilityService : AccessibilityService() {
         var ng: GestureDescription.StrokeDescription? = null
         var nb: GestureDescription.StrokeDescription? = null
 
-        // ── Jari Setir (tilt / horizontal slider) ───────────────
+        // ── Jari Setir (ring arc) ────────────────────────────────
         if (steerActive) {
-            val path = buildTiltSlide(steerCurrentNorm, snapSteer)
+            val path = buildSteerArc(steerCurrentNorm, snapSteer)
             ns = makeStroke(steerPrevStroke, path, willContinue = true)
             builder.addStroke(ns)
             count++
@@ -152,12 +164,11 @@ class TouchAccessibilityService : AccessibilityService() {
 
         dispatchGesture(builder.build(), object : GestureResultCallback() {
             override fun onCompleted(g: GestureDescription?) {
-                // Update posisi actual setir → snapshot yang baru saja di-dispatch
                 if (steerActive) { steerCurrentNorm = snapSteer; steerPrevStroke = ns }
                 else               steerPrevStroke = null
 
-                if (gasActive) gasPrevStroke = ng  else gasPrevStroke = null
-                if (brkActive) brkPrevStroke = nb  else brkPrevStroke = null
+                if (gasActive) gasPrevStroke = ng else gasPrevStroke = null
+                if (brkActive) brkPrevStroke = nb else brkPrevStroke = null
 
                 val stillActive = steerActive || gasActive || brkActive ||
                                   gasRelease  || brkRelease
@@ -165,7 +176,6 @@ class TouchAccessibilityService : AccessibilityService() {
             }
 
             override fun onCancelled(g: GestureDescription?) {
-                // Reset prev-stroke → gesture berikutnya mulai touch-down baru
                 steerPrevStroke = null; gasPrevStroke = null; brkPrevStroke = null
                 steerCurrentNorm = snapSteer
                 if (steerActive || gasActive || brkActive) {
@@ -178,26 +188,25 @@ class TouchAccessibilityService : AccessibilityService() {
     }
 
     // ─────────────────────────────────────────────────────────────
-    // TILT SLIDER PATH
+    // STEERING ARC PATH (ring mode)
     // ─────────────────────────────────────────────────────────────
 
     /**
-     * Hitung path horizontal dari posisi lama ke posisi baru.
-     *
-     *   touchX = steerCX + (norm × steerR)
-     *   norm ∈ [-1.0 … +1.0]   (sudah diperhitungkan MappingManager)
-     *   steerR = half-width slider (px)
-     *
-     * Contoh: steerCX=540, steerR=400, norm=+0.5 → touchX=740 (ke kanan)
-     *         norm=-1.0 → touchX=140 (full kiri)
-     *         norm=0.0  → touchX=540 (tengah / lurus)
+     * Busur setir dari fromNorm ke toNorm pada lingkaran setir BUSSID.
+     * touchX = centerX + R·cos(angle),  touchY = centerY + R·sin(angle)
+     * angle = norm × (maxDeg/2) × sens − 90°  (−90° agar 0 = puncak ring)
      */
-    private fun buildTiltSlide(fromNorm: Float, toNorm: Float): Path {
-        val fromX = steerCX + (fromNorm * steerR)
-        val toX   = steerCX + (toNorm   * steerR)
+    private fun buildSteerArc(fromNorm: Float, toNorm: Float): Path {
+        val maxAngle = (steerMaxDeg / 2f) * steerSens
+        val fromRad  = Math.toRadians(((fromNorm * maxAngle) - 90.0)).toFloat()
+        val toRad    = Math.toRadians(((toNorm   * maxAngle) - 90.0)).toFloat()
         return Path().apply {
-            moveTo(fromX, steerCY)
-            lineTo(toX,   steerCY)
+            moveTo(steerCX + steerR * cos(fromRad), steerCY + steerR * sin(fromRad))
+            repeat(8) { i ->
+                val t   = (i + 1) / 8f
+                val rad = fromRad + (toRad - fromRad) * t
+                lineTo(steerCX + steerR * cos(rad), steerCY + steerR * sin(rad))
+            }
         }
     }
 
@@ -262,11 +271,12 @@ class TouchAccessibilityService : AccessibilityService() {
     }
 
     // ─────────────────────────────────────────────────────────────
-    // PUBLIC: PAUSE
+    // PUBLIC: PAUSE — lepas semua touch (user bisa klik layar normal)
     // ─────────────────────────────────────────────────────────────
 
     fun releaseAllTouches() {
-        handler.removeCallbacksAndMessages(null)
+        handler.removeCallbacks(inputWatchdog)
+        handler.removeCallbacks(::doDispatch)
         steerActive = false; gasActive = false; brkActive = false
         gasRelease  = false; brkRelease = false
         steerPrevStroke = null; gasPrevStroke = null; brkPrevStroke = null
@@ -275,19 +285,14 @@ class TouchAccessibilityService : AccessibilityService() {
     }
 
     // ─────────────────────────────────────────────────────────────
-    // PUBLIC: SETIR (TILT MODE)
+    // PUBLIC: SETIR (ring arc mode)
     // ─────────────────────────────────────────────────────────────
 
     /**
      * Perbarui target setir.
      *
-     * [centerX]  = titik X TENGAH slider tilt di layar BUSSID
-     * [centerY]  = titik Y slider
-     * [radius]   = HALF-WIDTH slider (px). Finger bergerak ±radius dari center.
-     *              Sesuaikan agar tidak melewati batas layar:
-     *              centerX - radius ≥ 0  dan  centerX + radius ≤ lebar layar
-     * [toNorm]   = -1.0 (full kiri) .. 0.0 (lurus) .. +1.0 (full kanan)
-     *              (sudah diperhitungkan deadzone & sensitivity oleh MappingManager)
+     * Setiap panggilan mereset watchdog → jika wheel diam >800ms,
+     * auto-release mencegah layar terblokir.
      *
      * fromNorm DIABAIKAN — service melacak steerCurrentNorm sendiri.
      */
@@ -298,13 +303,17 @@ class TouchAccessibilityService : AccessibilityService() {
         maxDegrees: Float, sensitivity: Float,
         linearity: Float = 1.0f
     ) {
+        if (MappingManager.isMappingPaused) return
+
         steerCX      = centerX
         steerCY      = centerY
-        steerR       = radius       // dipakai sebagai half-width slider
+        steerR       = radius
         steerMaxDeg  = maxDegrees
         steerSens    = sensitivity
         steerTargetNorm = toNorm
         steerActive  = true
+
+        resetWatchdog()  // ← KUNCI: auto-release jika wheel berhenti bergerak
         ensureLoop()
     }
 
@@ -314,9 +323,8 @@ class TouchAccessibilityService : AccessibilityService() {
 
     /**
      * Injeksi pedal sebagai HOLD TOUCH di satu titik (seperti keyboard W/S Python).
-     * pressure > 0.12 → tekan (touchDown + hold)
-     * pressure ≤ 0.12 → lepas (touchUp)
-     * travelDistance diabaikan — tidak perlu drag.
+     * pressure > 0.12 → touchDown + hold
+     * pressure ≤ 0.12 → touchUp
      */
     fun injectPedalAnalog(
         baseX: Float, baseY: Float,
@@ -324,6 +332,8 @@ class TouchAccessibilityService : AccessibilityService() {
         pressure: Float,
         isBrake: Boolean = false
     ) {
+        if (MappingManager.isMappingPaused) return
+
         if (isBrake) {
             brkX = baseX; brkY = baseY
             if (pressure > 0.12f) { brkActive = true }
