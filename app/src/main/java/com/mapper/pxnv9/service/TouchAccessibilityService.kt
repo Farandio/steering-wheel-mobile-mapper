@@ -12,6 +12,7 @@ import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
 import com.mapper.pxnv9.manager.MappingManager
+import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -25,12 +26,17 @@ import kotlin.math.sin
  *   dispatchGesture (touch injection) tanpa root/system permission.
  *   → Gunakan mode KEMUDI / RING di BUSSID.
  *
- * ARSITEKTUR: SINGLE-DISPATCH LOOP (Ring Mode)
+ * ARSITEKTUR: SINGLE-DISPATCH LOOP (Ring Mode) — SMOOTH INTERPOLATION
  * ═══════════════════════════════════════════════════════════════════
  *
  * Loop: doDispatch() → dispatchGesture(16ms) → onCompleted → doDispatch()
  *   Zero-gap, ~62fps. Setir + pedal dalam 1 GestureDescription.
  *   (dispatchGesture() ganda saling cancel → harus 1 GestureDescription.)
+ *
+ * SMOOTH STEERING:
+ *   Setiap frame, jari setir bergerak INCREMENTAL menuju target (lerp).
+ *   Tidak langsung loncat ke target — gerakannya seperti Python mouse drag
+ *   yang halus. Kecepatan interpolasi dikontrol oleh STEER_LERP_SPEED.
  *
  * SAFETY: Watchdog auto-release
  *   Jika tidak ada input wheel selama INPUT_TIMEOUT_MS → lepas semua touch.
@@ -45,22 +51,32 @@ class TouchAccessibilityService : AccessibilityService() {
 
     companion object {
         private const val TAG              = "TouchAccessibility"
-        private const val STROKE_MS        = 16L    // ~62fps
+        private const val STROKE_MS        = 16L    // ~62fps per stroke
         private const val INPUT_TIMEOUT_MS = 800L   // auto-release jika wheel diam >800ms
+
+        /**
+         * Kecepatan interpolasi setir per frame (0..1 → 1 = langsung snap ke target).
+         * Nilai 0.25 = setir mencapai 75% jarak ke target per frame → terasa halus.
+         * Naikkan jika setir terasa lambat, turunkan jika masih patah-patah.
+         */
+        private const val STEER_LERP_SPEED = 0.30f
+
         var instance: TouchAccessibilityService? = null
             private set
     }
 
     // ─────────────────────────────────────────────────────────────
-    // STATE: SETIR (ring arc mode)
+    // STATE: SETIR (ring arc mode — smooth interpolation)
     // ─────────────────────────────────────────────────────────────
     private var steerCX          = 300f
     private var steerCY          = 856f
     private var steerR           = 168f
     private var steerMaxDeg      = 900f
     private var steerSens        = 1.0f
-    private var steerCurrentNorm = 0f    // posisi terakhir yg di-dispatch
-    private var steerTargetNorm  = 0f    // nilai sensor terbaru
+    /** Posisi jari setir saat ini di ring (sudah di-dispatch). Diinterpolasi setiap frame. */
+    private var steerCurrentNorm = 0f
+    /** Nilai target terbaru dari sensor wheel. Loop mendekati ini secara inkremental. */
+    private var steerTargetNorm  = 0f
     private var steerActive      = false
     private var steerPrevStroke: GestureDescription.StrokeDescription? = null
 
@@ -114,6 +130,9 @@ class TouchAccessibilityService : AccessibilityService() {
      *
      * SAFETY CHECK: jika mapping di-pause → berhenti dan lepas semua touch.
      * Mencegah touch terinjeksi saat user navigasi HP / buka menu.
+     *
+     * SMOOTH STEERING: Setiap frame, steerCurrentNorm diinterpolasi (lerp)
+     * menuju steerTargetNorm. Jari bergerak INKREMENTAL — tidak loncat.
      */
     private fun doDispatch() {
         // ── SAFETY: pause check ──────────────────────────────────
@@ -123,8 +142,21 @@ class TouchAccessibilityService : AccessibilityService() {
             return
         }
 
+        // ── Interpolasi setir (smooth) ───────────────────────────
+        // Gerakkan steerCurrentNorm mendekati steerTargetNorm secara inkremental.
+        // Ini menghasilkan drag yang halus di ring BUSSID, mirip Python mouse drag.
+        if (steerActive) {
+            val delta = steerTargetNorm - steerCurrentNorm
+            steerCurrentNorm = if (abs(delta) < 0.002f) {
+                // Sudah sangat dekat ke target — snap langsung (cegah oscillasi mikro)
+                steerTargetNorm
+            } else {
+                steerCurrentNorm + delta * STEER_LERP_SPEED
+            }
+        }
+
         // ── Snapshot semua state ─────────────────────────────────
-        val snapSteer = steerTargetNorm
+        val snapSteer = steerCurrentNorm
         val snapGasX  = gasX;  val snapGasY  = gasY
         val snapBrkX  = brkX;  val snapBrkY  = brkY
 
@@ -134,9 +166,9 @@ class TouchAccessibilityService : AccessibilityService() {
         var ng: GestureDescription.StrokeDescription? = null
         var nb: GestureDescription.StrokeDescription? = null
 
-        // ── Jari Setir (ring arc) ────────────────────────────────
+        // ── Jari Setir (titik di ring, digerakkan incremental) ───
         if (steerActive) {
-            val path = buildSteerArc(steerCurrentNorm, snapSteer)
+            val path = buildSteerPoint(snapSteer)
             ns = makeStroke(steerPrevStroke, path, willContinue = true)
             builder.addStroke(ns)
             count++
@@ -164,11 +196,10 @@ class TouchAccessibilityService : AccessibilityService() {
 
         dispatchGesture(builder.build(), object : GestureResultCallback() {
             override fun onCompleted(g: GestureDescription?) {
-                if (steerActive) { steerCurrentNorm = snapSteer; steerPrevStroke = ns }
-                else               steerPrevStroke = null
-
-                if (gasActive) gasPrevStroke = ng else gasPrevStroke = null
-                if (brkActive) brkPrevStroke = nb else brkPrevStroke = null
+                // Update stroke handle untuk continueStroke di siklus berikutnya
+                steerPrevStroke = if (steerActive) ns else null
+                gasPrevStroke   = if (gasActive)   ng else null
+                brkPrevStroke   = if (brkActive)   nb else null
 
                 val stillActive = steerActive || gasActive || brkActive ||
                                   gasRelease  || brkRelease
@@ -176,8 +207,8 @@ class TouchAccessibilityService : AccessibilityService() {
             }
 
             override fun onCancelled(g: GestureDescription?) {
+                // Reset semua stroke handle — cycle berikutnya mulai stroke baru
                 steerPrevStroke = null; gasPrevStroke = null; brkPrevStroke = null
-                steerCurrentNorm = snapSteer
                 if (steerActive || gasActive || brkActive) {
                     handler.postDelayed(::doDispatch, 16L)
                 } else {
@@ -188,26 +219,25 @@ class TouchAccessibilityService : AccessibilityService() {
     }
 
     // ─────────────────────────────────────────────────────────────
-    // STEERING ARC PATH (ring mode)
+    // STEERING POINT PATH (ring mode — titik tunggal per frame)
     // ─────────────────────────────────────────────────────────────
 
     /**
-     * Busur setir dari fromNorm ke toNorm pada lingkaran setir BUSSID.
-     * touchX = centerX + R·cos(angle),  touchY = centerY + R·sin(angle)
-     * angle = norm × (maxDeg/2) × sens − 90°  (−90° agar 0 = puncak ring)
+     * Hitung titik koordinat layar pada ring setir BUSSID untuk nilai norm tertentu.
+     *
+     * touchX = centerX + R·cos(angle)
+     * touchY = centerY + R·sin(angle)
+     * angle  = norm × (maxDeg/2) × sens − 90°  (−90° agar 0 = puncak ring)
+     *
+     * Path berupa "lineTo" dari posisi sebelumnya ke posisi baru.
+     * Dengan continueStroke(), Android menggabungkan ini menjadi drag mulus.
      */
-    private fun buildSteerArc(fromNorm: Float, toNorm: Float): Path {
+    private fun buildSteerPoint(norm: Float): Path {
         val maxAngle = (steerMaxDeg / 2f) * steerSens
-        val fromRad  = Math.toRadians(((fromNorm * maxAngle) - 90.0)).toFloat()
-        val toRad    = Math.toRadians(((toNorm   * maxAngle) - 90.0)).toFloat()
-        return Path().apply {
-            moveTo(steerCX + steerR * cos(fromRad), steerCY + steerR * sin(fromRad))
-            repeat(8) { i ->
-                val t   = (i + 1) / 8f
-                val rad = fromRad + (toRad - fromRad) * t
-                lineTo(steerCX + steerR * cos(rad), steerCY + steerR * sin(rad))
-            }
-        }
+        val rad      = Math.toRadians(((norm * maxAngle) - 90.0)).toFloat()
+        val tx       = steerCX + steerR * cos(rad)
+        val ty       = steerCY + steerR * sin(rad)
+        return Path().apply { moveTo(tx, ty) }
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -281,11 +311,12 @@ class TouchAccessibilityService : AccessibilityService() {
         gasRelease  = false; brkRelease = false
         steerPrevStroke = null; gasPrevStroke = null; brkPrevStroke = null
         steerCurrentNorm = 0f
+        steerTargetNorm  = 0f
         loopRunning = false
     }
 
     // ─────────────────────────────────────────────────────────────
-    // PUBLIC: SETIR (ring arc mode)
+    // PUBLIC: SETIR (ring arc mode — smooth lerp)
     // ─────────────────────────────────────────────────────────────
 
     /**
@@ -294,7 +325,8 @@ class TouchAccessibilityService : AccessibilityService() {
      * Setiap panggilan mereset watchdog → jika wheel diam >800ms,
      * auto-release mencegah layar terblokir.
      *
-     * fromNorm DIABAIKAN — service melacak steerCurrentNorm sendiri.
+     * Gerakan aktual jari diinterpolasi (lerp) di doDispatch() —
+     * tidak langsung loncat ke toNorm. Ini menghasilkan drag ring yang halus.
      */
     fun injectCircularSteering(
         centerX: Float, centerY: Float, radius: Float,
