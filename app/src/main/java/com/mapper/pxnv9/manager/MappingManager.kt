@@ -543,25 +543,25 @@ object MappingManager {
             val liveAngle = (effectiveVal * (steeringWidget.steeringDegrees / 2f))
             onSteeringAngleChanged?.invoke(liveAngle, effectiveVal)
 
-            if (kotlin.math.abs(effectiveVal - lastSteeringNormVal) > 0.01f) {
-                service.injectCircularSteering(
-                    centerX = steeringWidget.centerPoint.x,
-                    centerY = steeringWidget.centerPoint.y,
-                    radius = steeringWidget.steeringRadius,
-                    fromNorm = lastSteeringNormVal,
-                    toNorm = effectiveVal,
-                    maxDegrees = steeringWidget.steeringDegrees,
-                    sensitivity = steeringWidget.steeringSensitivity,
-                    linearity = steeringWidget.steeringLinearity
-                )
+            // Selalu update target setir setiap frame agar dispatch dapat menggabungkan
+            // steering + pedal dalam satu GestureDescription (threshold dihapus).
+            service.injectCircularSteering(
+                centerX = steeringWidget.centerPoint.x,
+                centerY = steeringWidget.centerPoint.y,
+                radius = steeringWidget.steeringRadius,
+                fromNorm = lastSteeringNormVal,
+                toNorm = effectiveVal,
+                maxDegrees = steeringWidget.steeringDegrees,
+                sensitivity = steeringWidget.steeringSensitivity,
+                linearity = steeringWidget.steeringLinearity
+            )
 
-                // Haptic getaran saat setir mentok kiri/kanan (Lock-to-lock)
-                if (kotlin.math.abs(effectiveVal) >= 0.98f && kotlin.math.abs(lastSteeringNormVal) < 0.98f) {
-                    context?.let { triggerHapticFeedback(it, 60L) }
-                }
-
-                lastSteeringNormVal = effectiveVal
+            // Haptic getaran saat setir mentok kiri/kanan (Lock-to-lock)
+            if (kotlin.math.abs(effectiveVal) >= 0.98f && kotlin.math.abs(lastSteeringNormVal) < 0.98f) {
+                context?.let { triggerHapticFeedback(it, 60L) }
             }
+
+            lastSteeringNormVal = effectiveVal
         }
 
         // 2. Pedal Gas & Rem (Progresif Analog & Dynamic Bound Axis)
