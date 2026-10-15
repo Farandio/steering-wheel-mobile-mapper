@@ -282,7 +282,9 @@ class TouchAccessibilityService : AccessibilityService() {
         // Jangan proses UI tree BUSSID — mencegah Unity freeze
     }
 
-    override fun onInterrupt() = Log.w(TAG, "TouchAccessibilityService terputus.")
+    override fun onInterrupt() {
+        Log.w(TAG, "TouchAccessibilityService terputus.")
+    }
 
     override fun onDestroy() {
         super.onDestroy()
