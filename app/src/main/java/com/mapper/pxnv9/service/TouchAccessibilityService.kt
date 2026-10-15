@@ -10,16 +10,24 @@ import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
 import com.mapper.pxnv9.manager.MappingManager
-import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 
 /**
- * Service utama untuk menginjeksi event sentuhan (Touch Injection) menggunakan
- * AccessibilityService.dispatchGesture API tanpa perlu Root.
+ * Service utama untuk menginjeksi event sentuhan via AccessibilityService.dispatchGesture (tanpa Root).
  *
- * Menerima hardware joystick/wheel OTG events via onMotionEvent() (public API sejak API 26),
- * sehingga tidak perlu overlay window interceptor untuk menangkap axis setir & pedal.
+ * ARSITEKTUR MULTI-FINGER:
+ * Setir, gas, dan rem masing-masing adalah "jari virtual" yang terpisah.
+ * Semua jari yang aktif dikemas ke dalam SATU GestureDescription per dispatch cycle
+ * sehingga tidak saling membatalkan (setir bisa aktif bersamaan dengan gas/rem).
+ *
+ * Flow:
+ *   onMotionEvent / onKeyEvent
+ *     → update FingerState (path, isActive)
+ *     → scheduleDispatch()
+ *       → doDispatch() : bangun 1 GestureDescription dengan semua jari aktif
+ *         → onCompleted : simpan stroke refs untuk continueStroke berikutnya
+ *         → jika ada update baru selama in-flight → dispatch ulang segera setelah selesai
  */
 class TouchAccessibilityService : AccessibilityService() {
 
@@ -29,22 +37,136 @@ class TouchAccessibilityService : AccessibilityService() {
             private set
     }
 
+    // =========================================================================
+    // MULTI-FINGER GESTURE STATE
+    // =========================================================================
+
+    /**
+     * State satu jari virtual.
+     * prevStroke : referensi stroke terakhir yang di-dispatch (untuk continueStroke).
+     * pendingPath: jalur yang akan di-dispatch pada cycle berikutnya.
+     * isActive   : apakah jari ini sedang menahan sentuhan.
+     */
+    private data class FingerState(
+        var prevStroke: GestureDescription.StrokeDescription? = null,
+        var pendingPath: Path? = null,
+        var isActive: Boolean = false
+    )
+
+    private val steeringFinger = FingerState()  // Jari setir (busur lingkaran)
+    private val gasFinger      = FingerState()  // Jari gas (slider vertikal)
+    private val brakeFinger    = FingerState()  // Jari rem (slider vertikal)
+
+    // Satu gesture per cycle — cegah tumpang tindih dispatch
+    private var gestureInFlight = false
+    // Ada update masuk saat gesture sedang berjalan → dispatch ulang setelah selesai
+    private var dirtyAfterFlight = false
+
+    /**
+     * Jadwalkan dispatch cycle berikutnya.
+     * Jika sedang in-flight, tandai dirty saja — dispatch akan diulang di onCompleted.
+     */
+    private fun scheduleDispatch() {
+        if (gestureInFlight) {
+            dirtyAfterFlight = true
+            return
+        }
+        doDispatch()
+    }
+
+    /**
+     * Kirim satu GestureDescription berisi semua jari virtual yang aktif.
+     * Menggunakan continueStroke agar tiap jari terasa smooth dan tidak "lompat".
+     */
+    private fun doDispatch() {
+        val builder = GestureDescription.Builder()
+        var strokeCount = 0
+
+        // Simpan referensi stroke baru untuk tiap jari (dipakai di onCompleted)
+        var newSteeringStroke: GestureDescription.StrokeDescription? = null
+        var newGasStroke: GestureDescription.StrokeDescription? = null
+        var newBrakeStroke: GestureDescription.StrokeDescription? = null
+
+        fun addFinger(finger: FingerState, storeTo: (GestureDescription.StrokeDescription) -> Unit) {
+            val path = finger.pendingPath ?: return
+            if (!finger.isActive) return
+            val stroke = buildContinuedStroke(finger.prevStroke, path, willContinue = true)
+            builder.addStroke(stroke)
+            storeTo(stroke)
+            strokeCount++
+        }
+
+        addFinger(steeringFinger) { newSteeringStroke = it }
+        addFinger(gasFinger)      { newGasStroke = it }
+        addFinger(brakeFinger)    { newBrakeStroke = it }
+
+        if (strokeCount == 0) return
+
+        gestureInFlight = true
+        dispatchGesture(builder.build(), object : GestureResultCallback() {
+            override fun onCompleted(g: GestureDescription?) {
+                // Simpan referensi stroke untuk continueStroke di cycle berikutnya
+                steeringFinger.prevStroke = if (steeringFinger.isActive) newSteeringStroke else null
+                gasFinger.prevStroke      = if (gasFinger.isActive)      newGasStroke      else null
+                brakeFinger.prevStroke    = if (brakeFinger.isActive)    newBrakeStroke    else null
+
+                gestureInFlight = false
+                if (dirtyAfterFlight) {
+                    dirtyAfterFlight = false
+                    doDispatch()
+                }
+            }
+            override fun onCancelled(g: GestureDescription?) {
+                // Reset semua referensi — stroke berikutnya akan mulai baru
+                steeringFinger.prevStroke = null
+                gasFinger.prevStroke      = null
+                brakeFinger.prevStroke    = null
+                gestureInFlight = false
+            }
+        }, null)
+    }
+
+    /**
+     * Buat StrokeDescription baru.
+     * Jika ada prevStroke (jari sudah menyentuh layar sebelumnya), gunakan continueStroke
+     * agar pergerakan terasa halus tanpa angkat jari.
+     * Jika tidak ada prevStroke (jari baru), buat stroke baru (touch down).
+     */
+    private fun buildContinuedStroke(
+        prev: GestureDescription.StrokeDescription?,
+        path: Path,
+        willContinue: Boolean,
+        durationMs: Long = 50L
+    ): GestureDescription.StrokeDescription {
+        if (prev != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            return try {
+                prev.continueStroke(path, 0L, durationMs, willContinue)
+            } catch (e: Exception) {
+                // continueStroke gagal (gesture dibatalkan) → mulai stroke baru
+                GestureDescription.StrokeDescription(path, 0L, durationMs, willContinue)
+            }
+        }
+        return GestureDescription.StrokeDescription(path, 0L, durationMs, willContinue)
+    }
+
+    // =========================================================================
+    // ACCESSIBILITY SERVICE LIFECYCLE
+    // =========================================================================
+
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
-        Log.i(TAG, "TouchAccessibilityService connected.")
+        Log.i(TAG, "TouchAccessibilityService terhubung.")
 
-        // Daftarkan SOURCE_JOYSTICK | SOURCE_GAMEPAD agar onMotionEvent() dipanggil
-        // saat setir / pedal OTG bergerak.
-        // API 34+ (UPSIDE_DOWN_CAKE): field motionEventSources tersedia di public API.
-        // API 26-33: field belum ada di public SDK, gunakan refleksi agar tetap compile.
+        // Daftarkan SOURCE_JOYSTICK | SOURCE_GAMEPAD agar onMotionEvent() menerima
+        // axis dari setir & pedal OTG (berlaku di semua versi sejak minSdk = 26).
+        // API 34+: field motionEventSources ada di public API.
+        // API 26-33: field ada di runtime tapi belum public → akses via refleksi.
         try {
             val info = serviceInfo ?: AccessibilityServiceInfo()
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                // API 34+: akses langsung
                 info.motionEventSources = InputDevice.SOURCE_JOYSTICK or InputDevice.SOURCE_GAMEPAD
             } else {
-                // API 26-33: set via refleksi (field ada di runtime tapi belum di public API)
                 val field = info.javaClass.getDeclaredField("motionEventSources")
                 field.isAccessible = true
                 field.setInt(info, InputDevice.SOURCE_JOYSTICK or InputDevice.SOURCE_GAMEPAD)
@@ -56,11 +178,11 @@ class TouchAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: android.view.accessibility.AccessibilityEvent?) {
-        // Jangan intercept atau proses UI tree BUSSID agar game tidak stuck/freeze
+        // Jangan proses UI tree BUSSID — mencegah game freeze
     }
 
     override fun onInterrupt() {
-        Log.w(TAG, "TouchAccessibilityService interrupted.")
+        Log.w(TAG, "TouchAccessibilityService terputus.")
     }
 
     override fun onDestroy() {
@@ -69,9 +191,8 @@ class TouchAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Menerima hardware motion events (setir, gas, rem, kopling) langsung dari OTG device.
-     * onMotionEvent() adalah public API sejak API 26 — tidak butuh overlay window interceptor.
-     * Dipanggil oleh OS untuk SOURCE_JOYSTICK | SOURCE_GAMEPAD yang sudah diset di motionEventSources.
+     * Menerima axis events dari setir & pedal OTG secara langsung via AccessibilityService.
+     * Tidak butuh overlay window interceptor — public API sejak API 26.
      */
     override fun onMotionEvent(event: MotionEvent) {
         MappingManager.processMotionEvent(event, this)
@@ -79,135 +200,37 @@ class TouchAccessibilityService : AccessibilityService() {
 
     override fun onKeyEvent(event: KeyEvent): Boolean {
         val handled = MappingManager.processKeyEvent(event)
-        if (handled) {
-            return true
-        }
-        return super.onKeyEvent(event)
+        return if (handled) true else super.onKeyEvent(event)
     }
 
     // =========================================================================
-    // GESTURE & TOUCH INJECTION
+    // PUBLIC: LEPASKAN SEMUA SENTUHAN (untuk PAUSE mode)
     // =========================================================================
 
     /**
-     * Lepaskan semua sentuhan virtual yang sedang tertahan (Gas, Rem, Setir)
-     * Dipanggil saat mapping di-pause agar user bisa mengoperasikan layar HP dengan normal.
+     * Hentikan semua jari virtual sekarang.
+     * Dipanggil saat mapping di-PAUSE agar user bebas menyentuh layar HP.
      */
     fun releaseAllTouches() {
-        gasStroke = null
-        isGasTouching = false
-        brakeStroke = null
-        isBrakeTouching = false
-        currentSteeringStroke = null
-        isSteeringTouching = false
+        steeringFinger.apply { isActive = false; pendingPath = null; prevStroke = null }
+        gasFinger.apply      { isActive = false; pendingPath = null; prevStroke = null }
+        brakeFinger.apply    { isActive = false; pendingPath = null; prevStroke = null }
+        gestureInFlight  = false
+        dirtyAfterFlight = false
     }
 
-    /**
-     * 1. Single Tap (Klakson, Lampu, Hazard, Pintu, Wiper, dll)
-     */
-    fun injectTap(x: Float, y: Float, durationMs: Long = 40L) {
-        if (com.mapper.pxnv9.manager.MappingManager.useAdbZeroLatencyMode && ShellTouchInjector.isAdbConnected) {
-            ShellTouchInjector.injectTap(x, y)
-            return
-        }
-
-        val path = Path().apply {
-            moveTo(x, y)
-        }
-        val stroke = GestureDescription.StrokeDescription(path, 0, durationMs)
-        val gesture = GestureDescription.Builder().addStroke(stroke).build()
-        dispatchGesture(gesture, null, null)
-    }
-
-    // State tracking untuk continuous touch pedal gas & rem (agar hold klik tidak putus di BUSSID)
-    private var isGasTouching: Boolean = false
-    private var isBrakeTouching: Boolean = false
-    private var gasStroke: GestureDescription.StrokeDescription? = null
-    private var brakeStroke: GestureDescription.StrokeDescription? = null
+    // =========================================================================
+    // PUBLIC: SETIR (Circular Steering)
+    // =========================================================================
 
     /**
-     * 2. Analog Progressive Pedal (Pedal Gas / Rem Touch Hold & Drag):
-     * Menggunakan Touch Hold (tekan dan tahan) pada tombol virtual BUSSID.
-     * Menggunakan continueStroke agar virtual finger tetap menempel (Hold) di collider game.
-     */
-    fun injectPedalAnalog(baseX: Float, baseY: Float, travelDistance: Float, pressure: Float, isBrake: Boolean = false) {
-        val isPressed = pressure > 0.12f
-
-        if (isPressed) {
-            val targetY = baseY - (travelDistance * pressure.coerceIn(0f, 1f))
-            val path = Path().apply {
-                moveTo(baseX, baseY)
-                lineTo(baseX, targetY)
-            }
-
-            try {
-                val stroke = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    val prev = if (isBrake) brakeStroke else gasStroke
-                    val isTouching = if (isBrake) isBrakeTouching else isGasTouching
-                    if (isTouching && prev != null) {
-                        prev.continueStroke(path, 0, 50L, true)
-                    } else {
-                        GestureDescription.StrokeDescription(path, 0, 50L, true)
-                    }
-                } else {
-                    GestureDescription.StrokeDescription(path, 0, 50L)
-                }
-
-                val gesture = GestureDescription.Builder().addStroke(stroke).build()
-                dispatchGesture(gesture, object : AccessibilityService.GestureResultCallback() {
-                    override fun onCompleted(gestureDescription: GestureDescription?) {
-                        super.onCompleted(gestureDescription)
-                        if (isBrake) {
-                            brakeStroke = stroke
-                            isBrakeTouching = true
-                        } else {
-                            gasStroke = stroke
-                            isGasTouching = true
-                        }
-                    }
-
-                    override fun onCancelled(gestureDescription: GestureDescription?) {
-                        super.onCancelled(gestureDescription)
-                        if (isBrake) {
-                            brakeStroke = null
-                            isBrakeTouching = false
-                        } else {
-                            gasStroke = null
-                            isGasTouching = false
-                        }
-                    }
-                }, null)
-            } catch (e: Exception) {
-                if (isBrake) {
-                    brakeStroke = null
-                    isBrakeTouching = false
-                } else {
-                    gasStroke = null
-                    isGasTouching = false
-                }
-            }
-        } else {
-            // Pedal dilepas: Lepaskan stroke hold (Touch Up)
-            if (isBrake) {
-                brakeStroke = null
-                isBrakeTouching = false
-            } else {
-                gasStroke = null
-                isGasTouching = false
-            }
-        }
-    }
-
-    // State pelacak stroke sentuhan kontinu (Continuous Drag) untuk setir kemudi
-    private var currentSteeringStroke: GestureDescription.StrokeDescription? = null
-    private var isSteeringTouching: Boolean = false
-
-    /**
-     * 3. Setir Rotasi 900 Derajat (Circular Continuous Touch & Drag):
-     * Menggunakan rumus trigonometri yang 100% PERSIS dengan wheel_overlay_mapper.py di PC:
-     * theta_rad = radians(angle_deg - 90)
-     * screen_x = cx + int(r * cos(theta_rad))
-     * screen_y = cy + int(r * sin(theta_rad))
+     * Gerakkan jari virtual setir sepanjang busur lingkaran dari posisi lama ke posisi baru.
+     * Rumus identik dengan wheel_overlay_mapper.py di PC:
+     *   theta_rad = radians(angle_deg - 90)
+     *   x = cx + r * cos(theta_rad)
+     *   y = cy + r * sin(theta_rad)
+     *
+     * Menggunakan multi-finger dispatch sehingga setir bisa aktif bersamaan dengan gas/rem.
      */
     fun injectCircularSteering(
         centerX: Float,
@@ -219,138 +242,151 @@ class TouchAccessibilityService : AccessibilityService() {
         sensitivity: Float,
         linearity: Float = 1.0f
     ) {
-        val isBackToCenter = kotlin.math.abs(toNorm) < 0.02f
-
-        if (isBackToCenter) {
-            currentSteeringStroke = null
-            isSteeringTouching = false
+        // Setir kembali ke tengah → lepaskan jari setir
+        if (kotlin.math.abs(toNorm) < 0.02f) {
+            steeringFinger.isActive   = false
+            steeringFinger.pendingPath = null
+            steeringFinger.prevStroke  = null
             return
         }
 
-        // Hitung sudut derajat persis seperti Python:
-        val maxAngle = (maxDegrees / 2f) * sensitivity
-        val fromAngleDeg = fromNorm * maxAngle
-        val toAngleDeg = toNorm * maxAngle
+        val maxAngle   = (maxDegrees / 2f) * sensitivity
+        val fromAngle  = fromNorm * maxAngle
+        val toAngle    = toNorm   * maxAngle
 
-        // Rumus posisi persis Python: theta_rad = radians(angle_deg - 90)
-        val fromRad = Math.toRadians((fromAngleDeg - 90.0)).toFloat()
-        val toRad = Math.toRadians((toAngleDeg - 90.0)).toFloat()
-
-        val startX = centerX + (radius * cos(fromRad))
-        val startY = centerY + (radius * sin(fromRad))
-        val endX = centerX + (radius * cos(toRad))
-        val endY = centerY + (radius * sin(toRad))
+        // Konversi ke radian (Python-style: angle - 90)
+        val fromRad = Math.toRadians((fromAngle - 90.0)).toFloat()
+        val toRad   = Math.toRadians((toAngle   - 90.0)).toFloat()
 
         val path = Path().apply {
-            moveTo(startX, startY)
-            val steps = 8
+            moveTo(
+                centerX + radius * cos(fromRad),
+                centerY + radius * sin(fromRad)
+            )
+            // Interpolasi busur dengan 6 titik agar gerak halus di BUSSID
+            val steps = 6
             for (i in 1..steps) {
-                val t = i / steps.toFloat()
+                val t      = i / steps.toFloat()
                 val curRad = fromRad + (toRad - fromRad) * t
-                val px = centerX + (radius * cos(curRad))
-                val py = centerY + (radius * sin(curRad))
-                lineTo(px, py)
+                lineTo(
+                    centerX + radius * cos(curRad),
+                    centerY + radius * sin(curRad)
+                )
             }
         }
 
-        try {
-            val stroke = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val prev = currentSteeringStroke
-                if (isSteeringTouching && prev != null) {
-                    prev.continueStroke(path, 0, 45L, true)
-                } else {
-                    GestureDescription.StrokeDescription(path, 0, 45L, true)
-                }
-            } else {
-                GestureDescription.StrokeDescription(path, 0, 45L)
-            }
-
-            val gesture = GestureDescription.Builder().addStroke(stroke).build()
-            dispatchGesture(gesture, object : AccessibilityService.GestureResultCallback() {
-                override fun onCompleted(gestureDescription: GestureDescription?) {
-                    super.onCompleted(gestureDescription)
-                    currentSteeringStroke = stroke
-                    isSteeringTouching = true
-                }
-
-                override fun onCancelled(gestureDescription: GestureDescription?) {
-                    super.onCancelled(gestureDescription)
-                    currentSteeringStroke = null
-                    isSteeringTouching = false
-                }
-            }, null)
-        } catch (e: Exception) {
-            currentSteeringStroke = null
-            isSteeringTouching = false
-            val fallbackStroke = GestureDescription.StrokeDescription(path, 0, 40L)
-            val fallbackGesture = GestureDescription.Builder().addStroke(fallbackStroke).build()
-            dispatchGesture(fallbackGesture, null, null)
-        }
+        steeringFinger.pendingPath = path
+        steeringFinger.isActive    = true
+        scheduleDispatch()
     }
 
+    // =========================================================================
+    // PUBLIC: PEDAL GAS & REM (Analog Slider)
+    // =========================================================================
+
     /**
-     * Eksekusi Macro Tap (Klakson Telolet / Basuri)
+     * Gerakkan jari virtual pedal secara vertikal sesuai tekanan (0.0 = lepas, 1.0 = penuh).
+     * Menggunakan multi-finger dispatch sehingga gas/rem bisa aktif bersamaan dengan setir.
      */
+    fun injectPedalAnalog(
+        baseX: Float,
+        baseY: Float,
+        travelDistance: Float,
+        pressure: Float,
+        isBrake: Boolean = false
+    ) {
+        val finger    = if (isBrake) brakeFinger else gasFinger
+        val isPressed = pressure > 0.12f
+
+        if (!isPressed) {
+            // Pedal dilepas → hentikan jari ini (touch-up otomatis setelah stroke 50ms habis)
+            finger.isActive    = false
+            finger.pendingPath = null
+            finger.prevStroke  = null
+            return
+        }
+
+        val targetY = baseY - (travelDistance * pressure.coerceIn(0f, 1f))
+        val path    = Path().apply {
+            moveTo(baseX, baseY)
+            lineTo(baseX, targetY)
+        }
+        finger.pendingPath = path
+        finger.isActive    = true
+        scheduleDispatch()
+    }
+
+    // =========================================================================
+    // PUBLIC: TAP TUNGGAL (Klakson, Lampu, Hazard, dll)
+    // =========================================================================
+
+    /**
+     * Tap singkat pada koordinat layar (tidak menggunakan multi-finger state,
+     * cukup dispatch sekali karena tap tidak perlu di-hold).
+     */
+    fun injectTap(x: Float, y: Float, durationMs: Long = 40L) {
+        if (MappingManager.useAdbZeroLatencyMode && ShellTouchInjector.isAdbConnected) {
+            ShellTouchInjector.injectTap(x, y)
+            return
+        }
+        val path   = Path().apply { moveTo(x, y) }
+        val stroke = GestureDescription.StrokeDescription(path, 0L, durationMs)
+        val gesture = GestureDescription.Builder().addStroke(stroke).build()
+        dispatchGesture(gesture, null, null)
+    }
+
+    // =========================================================================
+    // PUBLIC: MACRO TAPS (Telolet / Basuri)
+    // =========================================================================
+
     fun injectMacroTaps(points: List<com.mapper.pxnv9.model.PointF>, delayBetweenMs: Long = 100L) {
         Thread {
             for (pt in points) {
                 injectTap(pt.x, pt.y, 40L)
-                try {
-                    Thread.sleep(delayBetweenMs)
-                } catch (e: InterruptedException) {
-                    break
-                }
+                try { Thread.sleep(delayBetweenMs) } catch (e: InterruptedException) { break }
             }
         }.start()
     }
 
-    /**
-     * 4. H-Shifter BUSSID:
-     * Pada BUSSID H-Shifter, dari titik netral / tengah ke gigi (1, 2, 3, 4, 5, 6, R)
-     * memiliki lorong H (misal gigi 1 harus lewat atas lalu kiri).
-     * Jika midWayPoint diberikan, gesture mengikuti lintasan siku (L-shape / H-gate path).
-     */
-    fun injectShifterPath(startX: Float, startY: Float, midX: Float, midY: Float, endX: Float, endY: Float, durationMs: Long = 70L) {
-        val path = Path().apply {
-            moveTo(startX, startY)
-            lineTo(midX, midY)
-            lineTo(endX, endY)
-        }
-        val stroke = GestureDescription.StrokeDescription(path, 0, durationMs)
-        val gesture = GestureDescription.Builder().addStroke(stroke).build()
-        dispatchGesture(gesture, null, null)
+    // =========================================================================
+    // PUBLIC: H-SHIFTER PATH (Perpindahan Gigi)
+    // =========================================================================
+
+    fun injectShifterPath(
+        startX: Float, startY: Float,
+        midX: Float,   midY: Float,
+        endX: Float,   endY: Float,
+        durationMs: Long = 70L
+    ) {
+        val path   = Path().apply { moveTo(startX, startY); lineTo(midX, midY); lineTo(endX, endY) }
+        val stroke = GestureDescription.StrokeDescription(path, 0L, durationMs)
+        dispatchGesture(GestureDescription.Builder().addStroke(stroke).build(), null, null)
     }
 
     fun injectShifterSlide(startX: Float, startY: Float, endX: Float, endY: Float, durationMs: Long = 50L) {
-        val path = Path().apply {
-            moveTo(startX, startY)
-            lineTo(endX, endY)
-        }
-        val stroke = GestureDescription.StrokeDescription(path, 0, durationMs)
-        val gesture = GestureDescription.Builder().addStroke(stroke).build()
-        dispatchGesture(gesture, null, null)
+        val path   = Path().apply { moveTo(startX, startY); lineTo(endX, endY) }
+        val stroke = GestureDescription.StrokeDescription(path, 0L, durationMs)
+        dispatchGesture(GestureDescription.Builder().addStroke(stroke).build(), null, null)
     }
 
     /**
-     * Jalur multi-titik untuk perpindahan gigi presisi H-gate:
-     * Menyusuri lorong H lalu menahan sentuhan di slot target (dwell time) agar Unity collider BUSSID mengunci gigi.
-     * Durasi drag diperlambat sedikit (180ms - 220ms) agar bola shifter kuning BUSSID benar-benar ditarik
-     * menyusuri lorong dan tidak dianggap glitch / sentuhan kilat oleh game.
+     * Jalur multi-titik untuk perpindahan gigi presisi H-gate.
+     * Durasi diperlambat (180-220ms) agar bola shifter kuning BUSSID
+     * benar-benar menyusuri lorong dan tidak dianggap glitch oleh game.
      */
-    fun injectMultiPointPath(points: List<Pair<Float, Float>>, durationMs: Long = 180L, holdAtEndMs: Long = 120L) {
+    fun injectMultiPointPath(
+        points: List<Pair<Float, Float>>,
+        durationMs: Long = 180L,
+        holdAtEndMs: Long = 120L
+    ) {
         if (points.size < 2) return
         val path = Path().apply {
             moveTo(points[0].first, points[0].second)
-            for (i in 1 until points.size) {
-                lineTo(points[i].first, points[i].second)
-            }
-            // Tahan di titik akhir (micro move di tempat) agar terdeteksi solid oleh sensor slot BUSSID
-            val last = points.last()
-            lineTo(last.first, last.second)
+            for (i in 1 until points.size) lineTo(points[i].first, points[i].second)
+            // Tahan di titik akhir agar sensor slot BUSSID mengunci gigi
+            lineTo(points.last().first, points.last().second)
         }
-        val totalDuration = durationMs + holdAtEndMs
-        val stroke = GestureDescription.StrokeDescription(path, 0, totalDuration)
-        val gesture = GestureDescription.Builder().addStroke(stroke).build()
-        dispatchGesture(gesture, null, null)
+        val stroke = GestureDescription.StrokeDescription(path, 0L, durationMs + holdAtEndMs)
+        dispatchGesture(GestureDescription.Builder().addStroke(stroke).build(), null, null)
     }
 }
