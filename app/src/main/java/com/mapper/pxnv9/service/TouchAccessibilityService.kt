@@ -19,236 +19,169 @@ import kotlin.math.sin
  * Service injeksi sentuhan via AccessibilityService.dispatchGesture (tanpa Root).
  *
  * ═══════════════════════════════════════════════════════════════════
- * ARSITEKTUR MULTI-FINGER  (Setir + Gas + Rem bersamaan)
+ * ARSITEKTUR DUA-CHANNEL (seperti Python: mouse independen dari keyboard)
  * ═══════════════════════════════════════════════════════════════════
  *
- * KUNCI 1 — Simpan TARGET, bukan Path
- *   injectCircularSteering / injectPedalAnalog hanya menyimpan
- *   nilai target (steerTargetNorm, gasTargetPressure, …).
- *   Path dihitung ON-DEMAND di doDispatch() dari posisi TERAKHIR
- *   yang benar-benar sudah di-dispatch.
+ * CHANNEL A — SETIR (steering loop independen)
+ *   Loop berlari setiap STEER_INTERVAL_MS (16ms ≈ 60fps).
+ *   Jari setir TIDAK PERNAH dilepas (always-hold, seperti mouseDown Python).
+ *   continueStroke memperbarui posisi tanpa angkat jari.
+ *   Loop berjalan sendiri via handler.postDelayed tanpa menunggu pedal.
  *
- *   Kenapa ini penting?
- *   Jika dispatch sedang berjalan (inFlight) dan sensor terus
- *   memperbarui target, Path lama punya moveTo di posisi lama
- *   tapi continueStroke berakhir di posisi baru → LOMPAT.
- *   Dengan menghitung path saat dispatch, posisi selalu konsisten.
+ * CHANNEL B — PEDAL GAS & REM (hold-tap independen)
+ *   Gas dan rem adalah HOLD TOUCH di satu titik (bukan drag analog).
+ *   Ini persis seperti Python: keyboard W/S hold.
+ *   Masing-masing punya dispatchGesture-nya sendiri yang TIDAK blokir setir.
+ *   Saat pedal diinjak: touch-down hold panjang (PEDAL_HOLD_MS).
+ *   Saat masih tertekan saat hold habis: perpanjang (continueStroke).
+ *   Saat dilepas: stop perpanjangan → touch-up otomatis.
  *
- * KUNCI 2 — Snapshot di doDispatch(), update di onCompleted()
- *   Saat doDispatch() dimulai, snapshot semua target:
- *     snapSteer = steerTargetNorm
- *   Path dihitung dari currentNorm → snapSteer.
- *   Di onCompleted(), update currentNorm = snapSteer.
- *   Jika ada update baru di antara: dirtyWhileBusy=true →
- *   doDispatch() dipanggil ulang dengan target yang LEBIH BARU,
- *   dan currentNorm sudah di-update sehingga path TETAP KONSISTEN.
- *
- * KUNCI 3 — Handler.post batching
- *   Semua panggilan scheduleDispatch() dalam satu onMotionEvent()
- *   (setir, gas, rem) di-deduplicate oleh removeCallbacks+post
- *   sehingga doDispatch() hanya dipanggil SATU KALI dengan semua
- *   finger states ter-update → satu GestureDescription multi-finger.
- *
- * KUNCI 4 — Setir always-hold
- *   Jari setir tidak pernah dilepas berdasarkan sudut.
- *   Saat lurus (norm=0), jari hold di 12 o'clock pada ring.
- *   Hanya releaseAllTouches() (tombol PAUSE) yang melepas.
+ * KENAPA DUA CHANNEL INDEPENDEN?
+ *   dispatchGesture() tidak mengharuskan semua jari dalam satu GestureDescription.
+ *   Android mendukung multiple simultaneous gestures dari satu AccessibilityService.
+ *   Dengan dua channel terpisah, setir tidak perlu menunggu pedal selesai dan
+ *   sebaliknya — persis seperti mouse + keyboard di Python bisa bersamaan.
  * ═══════════════════════════════════════════════════════════════════
  */
 class TouchAccessibilityService : AccessibilityService() {
 
     companion object {
-        private const val TAG = "TouchAccessibility"
+        private const val TAG              = "TouchAccessibility"
+        private const val STEER_INTERVAL_MS = 16L   // ~60fps untuk setir halus
+        private const val STEER_STROKE_MS   = 20L   // durasi tiap stroke setir (< interval)
+        private const val PEDAL_HOLD_MS     = 200L  // durasi satu hold pedal sebelum di-extend
         var instance: TouchAccessibilityService? = null
             private set
     }
 
     // ─────────────────────────────────────────────────────────────
-    // STATE PER-FINGER
-    // prevStroke : referensi StrokeDescription terakhir untuk continueStroke
-    // isActive   : apakah jari sedang menyentuh layar
-    // releaseOnce: jari baru dilepas → kirim 1 dispatch final willContinue=false
+    // CHANNEL A: SETIR
     // ─────────────────────────────────────────────────────────────
 
-    private data class Finger(
-        var prevStroke: GestureDescription.StrokeDescription? = null,
-        var isActive: Boolean = false,
-        var releaseOnce: Boolean = false
-    )
+    private var steerCX          = 300f
+    private var steerCY          = 856f
+    private var steerR           = 168f
+    private var steerMaxDeg      = 900f
+    private var steerSens        = 1.0f
+    private var steerCurrentNorm = 0f   // posisi touch yg sudah di-dispatch
+    private var steerTargetNorm  = 0f   // nilai sensor terbaru
+    private var steerActive      = false
+    private var steerPrevStroke: GestureDescription.StrokeDescription? = null
+    private var steerLoopRunning = false
 
-    private val sf = Finger()  // steering finger
-    private val gf = Finger()  // gas finger
-    private val bf = Finger()  // brake finger
+    private val steerHandler = Handler(Looper.getMainLooper())
 
-    // ─── Steering params ──────────────────────────────────────────
-    // currentNorm: posisi touch yang BENAR-BENAR sudah di-dispatch
-    // targetNorm : nilai terbaru dari sensor (bisa berubah saat inFlight)
-    private var steerCX      = 300f
-    private var steerCY      = 856f
-    private var steerR       = 168f
-    private var steerMaxDeg  = 900f
-    private var steerSens    = 1.0f
-    private var steerCurrentNorm = 0f   // last dispatched position
-    private var steerTargetNorm  = 0f   // latest sensor value
+    private val steerLoop = object : Runnable {
+        override fun run() {
+            if (!steerActive) {
+                steerLoopRunning = false
+                steerPrevStroke = null
+                return
+            }
 
-    // ─── Gas pedal params ─────────────────────────────────────────
-    private var gasBX      = 1700f
-    private var gasBY      = 900f
-    private var gasTrav    = 140f
-    private var gasCurrent = 0f   // last dispatched pressure
-    private var gasTarget  = 0f   // latest sensor pressure
+            val snap = steerTargetNorm
+            val path = buildSteerArc(steerCurrentNorm, snap)
 
-    // ─── Brake pedal params ───────────────────────────────────────
-    private var brkBX      = 1500f
-    private var brkBY      = 900f
-    private var brkTrav    = 140f
-    private var brkCurrent = 0f
-    private var brkTarget  = 0f
+            val stroke = if (steerPrevStroke != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                try { steerPrevStroke!!.continueStroke(path, 0L, STEER_STROKE_MS, true) }
+                catch (_: Exception) { GestureDescription.StrokeDescription(path, 0L, STEER_STROKE_MS, true) }
+            } else {
+                GestureDescription.StrokeDescription(path, 0L, STEER_STROKE_MS, true)
+            }
+
+            dispatchGesture(GestureDescription.Builder().addStroke(stroke).build(),
+                object : GestureResultCallback() {
+                    override fun onCompleted(g: GestureDescription?) {
+                        steerCurrentNorm = snap
+                        steerPrevStroke  = stroke
+                    }
+                    override fun onCancelled(g: GestureDescription?) {
+                        // Reset stroke agar loop berikutnya mulai touch-down baru
+                        steerPrevStroke  = null
+                        steerCurrentNorm = snap
+                    }
+                }, null)
+
+            steerLoopRunning = true
+            steerHandler.postDelayed(this, STEER_INTERVAL_MS)
+        }
+    }
+
+    /** Mulai atau pastikan loop setir berjalan. */
+    private fun ensureSteerLoop() {
+        if (!steerLoopRunning) {
+            steerLoopRunning = true
+            steerHandler.post(steerLoop)
+        }
+    }
 
     // ─────────────────────────────────────────────────────────────
-    // DISPATCH ENGINE
+    // CHANNEL B: PEDAL GAS & REM (hold-tap independen)
     // ─────────────────────────────────────────────────────────────
 
-    private val handler        = Handler(Looper.getMainLooper())
-    private var inFlight       = false
-    private var dirtyWhileBusy = false
+    private inner class PedalChannel {
+        var x          = 0f
+        var y          = 0f
+        var isPressed  = false   // apakah pedal sedang ditekan
+        var inFlight   = false   // apakah dispatch sedang berjalan
+        var prevStroke: GestureDescription.StrokeDescription? = null
 
-    /**
-     * Jadwalkan satu dispatch cycle.
-     *
-     * removeCallbacks + post memastikan hanya ADA SATU pending dispatch
-     * pada suatu waktu. Tiga panggilan berurutan dalam satu onMotionEvent
-     * (setir, gas, rem) menghasilkan tepat SATU doDispatch() di akhir.
-     */
-    private fun scheduleDispatch() {
-        if (inFlight) {
-            dirtyWhileBusy = true
-            return
-        }
-        handler.removeCallbacks(::doDispatch)
-        handler.post(::doDispatch)
-    }
-
-    /**
-     * Dispatch SATU GestureDescription berisi semua jari aktif.
-     *
-     * Path dihitung di sini (bukan disimpan saat update) agar selalu
-     * konsisten dengan posisi yang benar-benar sudah di-dispatch.
-     */
-    private fun doDispatch() {
-        if (inFlight) { dirtyWhileBusy = true; return }
-
-        // ── Snapshot semua target sebelum mulai build ───────────
-        // Target bisa berubah kapan saja dari onMotionEvent.
-        // Snapshot memastikan onCompleted update ke nilai yang TEPAT
-        // sesuai apa yang baru saja di-dispatch, bukan nilai yang lebih baru.
-        val snapSteer = steerTargetNorm
-        val snapGas   = gasTarget
-        val snapBrk   = brkTarget
-
-        val builder = GestureDescription.Builder()
-        var count   = 0
-
-        var ns: GestureDescription.StrokeDescription? = null
-        var ng: GestureDescription.StrokeDescription? = null
-        var nb: GestureDescription.StrokeDescription? = null
-
-        // ── Jari Setir ──────────────────────────────────────────
-        if (sf.isActive) {
-            // Path dari posisi TERAKHIR DI-DISPATCH (currentNorm) ke TARGET terbaru (snapSteer)
-            // → ini yang menjamin continueStroke tidak lompat posisi
-            val path = buildSteerArc(steerCurrentNorm, snapSteer)
-            ns = continued(sf.prevStroke, path, willContinue = true)
-            builder.addStroke(ns)
-            count++
+        fun press(px: Float, py: Float) {
+            x = px; y = py
+            isPressed = true
+            if (!inFlight) dispatch()
         }
 
-        // ── Jari Gas ────────────────────────────────────────────
-        if (gf.isActive || gf.releaseOnce) {
-            val fromY = gasBY - (gasTrav * gasCurrent.coerceIn(0f, 1f))
-            val toY   = if (gf.isActive) gasBY - (gasTrav * snapGas.coerceIn(0f, 1f)) else gasBY
-            val path  = Path().apply { moveTo(gasBX, fromY); lineTo(gasBX, toY) }
-            ng = continued(gf.prevStroke, path, willContinue = gf.isActive)
-            builder.addStroke(ng)
-            if (gf.releaseOnce) gf.releaseOnce = false
-            count++
+        fun release() {
+            isPressed = false
+            // inFlight akan berakhir sendiri (willContinue=false di dispatch berikutnya)
         }
 
-        // ── Jari Rem ────────────────────────────────────────────
-        if (bf.isActive || bf.releaseOnce) {
-            val fromY = brkBY - (brkTrav * brkCurrent.coerceIn(0f, 1f))
-            val toY   = if (bf.isActive) brkBY - (brkTrav * snapBrk.coerceIn(0f, 1f)) else brkBY
-            val path  = Path().apply { moveTo(brkBX, fromY); lineTo(brkBX, toY) }
-            nb = continued(bf.prevStroke, path, willContinue = bf.isActive)
-            builder.addStroke(nb)
-            if (bf.releaseOnce) bf.releaseOnce = false
-            count++
+        fun reset() {
+            isPressed  = false
+            inFlight   = false
+            prevStroke = null
         }
 
-        if (count == 0) return
+        private fun dispatch() {
+            if (inFlight) return
+            val path = Path().apply { moveTo(x, y) }
 
-        inFlight = true
-        dispatchGesture(builder.build(), object : GestureResultCallback() {
-            override fun onCompleted(g: GestureDescription?) {
-                // Update posisi ACTUAL ke snapshot yang baru saja di-dispatch
-                if (sf.isActive) { steerCurrentNorm = snapSteer; sf.prevStroke = ns }
-                else               sf.prevStroke = null
+            // Jika masih ditekan → willContinue=true agar BUSSID tidak angkat jari
+            val willContinue = isPressed
 
-                if (gf.isActive) { gasCurrent = snapGas; gf.prevStroke = ng }
-                else             { gasCurrent = 0f;      gf.prevStroke = null }
-
-                if (bf.isActive) { brkCurrent = snapBrk; bf.prevStroke = nb }
-                else             { brkCurrent = 0f;      bf.prevStroke = null }
-
-                inFlight = false
-                if (dirtyWhileBusy) {
-                    dirtyWhileBusy = false
-                    doDispatch()   // dispatch segera dengan target yang LEBIH BARU
-                }
+            val stroke = if (prevStroke != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                try { prevStroke!!.continueStroke(path, 0L, PEDAL_HOLD_MS, willContinue) }
+                catch (_: Exception) { GestureDescription.StrokeDescription(path, 0L, PEDAL_HOLD_MS, willContinue) }
+            } else {
+                GestureDescription.StrokeDescription(path, 0L, PEDAL_HOLD_MS, willContinue)
             }
-            override fun onCancelled(g: GestureDescription?) {
-                // Reset semua prev-stroke → stroke berikutnya mulai touch-down baru
-                sf.prevStroke = null; gf.prevStroke = null; bf.prevStroke = null
-                // Update currentPos ke snapshot sebagai best-estimate
-                steerCurrentNorm = snapSteer
-                gasCurrent       = if (gf.isActive) snapGas else 0f
-                brkCurrent       = if (bf.isActive) snapBrk else 0f
-                inFlight = false
-            }
-        }, null)
-    }
 
-    /** Hitung busur setir dari fromNorm ke toNorm (6 titik interpolasi). */
-    private fun buildSteerArc(fromNorm: Float, toNorm: Float): Path {
-        val maxAngle = (steerMaxDeg / 2f) * steerSens
-        val fromRad  = Math.toRadians(((fromNorm * maxAngle) - 90.0)).toFloat()
-        val toRad    = Math.toRadians(((toNorm   * maxAngle) - 90.0)).toFloat()
-        return Path().apply {
-            moveTo(steerCX + steerR * cos(fromRad), steerCY + steerR * sin(fromRad))
-            repeat(6) { i ->
-                val t   = (i + 1) / 6f
-                val rad = fromRad + (toRad - fromRad) * t
-                lineTo(steerCX + steerR * cos(rad), steerCY + steerR * sin(rad))
-            }
+            inFlight = true
+            dispatchGesture(GestureDescription.Builder().addStroke(stroke).build(),
+                object : GestureResultCallback() {
+                    override fun onCompleted(g: GestureDescription?) {
+                        inFlight = false
+                        if (isPressed) {
+                            // Masih ditekan → perpanjang hold
+                            prevStroke = stroke
+                            dispatch()
+                        } else {
+                            // Pedal dilepas → tidak dispatch lagi, touch-up terjadi
+                            prevStroke = null
+                        }
+                    }
+                    override fun onCancelled(g: GestureDescription?) {
+                        inFlight   = false
+                        prevStroke = null
+                        if (isPressed) dispatch() // coba lagi
+                    }
+                }, null)
         }
     }
 
-    /**
-     * Lanjutkan stroke sebelumnya (drag halus, tanpa angkat jari)
-     * atau mulai stroke baru (touch-down) jika belum ada riwayat.
-     */
-    private fun continued(
-        prev: GestureDescription.StrokeDescription?,
-        path: Path,
-        willContinue: Boolean = true,
-        ms: Long = 50L
-    ): GestureDescription.StrokeDescription {
-        if (prev != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            return try { prev.continueStroke(path, 0L, ms, willContinue) }
-            catch (_: Exception) { GestureDescription.StrokeDescription(path, 0L, ms, willContinue) }
-        }
-        return GestureDescription.StrokeDescription(path, 0L, ms, willContinue)
-    }
+    private val gasChannel = PedalChannel()
+    private val brkChannel = PedalChannel()
 
     // ─────────────────────────────────────────────────────────────
     // LIFECYCLE
@@ -288,7 +221,7 @@ class TouchAccessibilityService : AccessibilityService() {
 
     override fun onDestroy() {
         super.onDestroy()
-        handler.removeCallbacksAndMessages(null)
+        steerHandler.removeCallbacksAndMessages(null)
         instance = null
     }
 
@@ -306,12 +239,16 @@ class TouchAccessibilityService : AccessibilityService() {
     // ─────────────────────────────────────────────────────────────
 
     fun releaseAllTouches() {
-        handler.removeCallbacksAndMessages(null)
-        sf.apply { isActive=false; releaseOnce=false; prevStroke=null }
-        gf.apply { isActive=false; releaseOnce=false; prevStroke=null }
-        bf.apply { isActive=false; releaseOnce=false; prevStroke=null }
-        steerCurrentNorm=0f; gasCurrent=0f; brkCurrent=0f
-        inFlight=false; dirtyWhileBusy=false
+        // Hentikan loop setir
+        steerActive      = false
+        steerLoopRunning = false
+        steerHandler.removeCallbacksAndMessages(null)
+        steerPrevStroke  = null
+        steerCurrentNorm = 0f
+
+        // Reset pedal
+        gasChannel.reset()
+        brkChannel.reset()
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -319,25 +256,27 @@ class TouchAccessibilityService : AccessibilityService() {
     // ─────────────────────────────────────────────────────────────
 
     /**
-     * Perbarui target setir.
-     * fromNorm DIABAIKAN — service menggunakan steerCurrentNorm sendiri
-     * agar path selalu konsisten dengan posisi touch terakhir di layar.
+     * Perbarui target setir dan pastikan loop berjalan.
+     * Loop setir independen dari pedal — tidak perlu menunggu satu sama lain.
      *
-     * Jari setir TIDAK PERNAH dilepas berdasarkan sudut (bahkan 0°).
-     * Saat lurus, jari hold di 12 o'clock (puncak ring setir BUSSID).
+     * fromNorm DIABAIKAN — service menggunakan steerCurrentNorm sendiri.
+     * Jari setir TIDAK PERNAH dilepas berdasarkan sudut (always-hold).
      */
     fun injectCircularSteering(
         centerX: Float, centerY: Float, radius: Float,
-        fromNorm: Float,  // parameter dipertahankan untuk kompatibilitas MappingManager
+        fromNorm: Float,   // dipertahankan untuk kompatibilitas MappingManager
         toNorm: Float,
         maxDegrees: Float, sensitivity: Float,
         linearity: Float = 1.0f
     ) {
-        steerCX = centerX; steerCY = centerY; steerR = radius
-        steerMaxDeg = maxDegrees; steerSens = sensitivity
-        steerTargetNorm = toNorm   // simpan target, path dihitung saat dispatch
-        sf.isActive = true
-        scheduleDispatch()
+        steerCX      = centerX
+        steerCY      = centerY
+        steerR       = radius
+        steerMaxDeg  = maxDegrees
+        steerSens    = sensitivity
+        steerTargetNorm = toNorm
+        steerActive  = true
+        ensureSteerLoop()
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -345,9 +284,11 @@ class TouchAccessibilityService : AccessibilityService() {
     // ─────────────────────────────────────────────────────────────
 
     /**
-     * Perbarui target pedal.
-     * Path dari posisi TERAKHIR DI-DISPATCH ke target baru
-     * dihitung on-demand di doDispatch() → tidak ada lompatan posisi.
+     * Injeksi pedal sebagai HOLD TOUCH di satu titik — persis seperti
+     * keyboard W/S hold di Python. Independen dari loop setir.
+     *
+     * pressure > 0.12 → tekan (hold touch di titik pedal)
+     * pressure ≤ 0.12 → lepas (stop hold → BUSSID angkat jari)
      */
     fun injectPedalAnalog(
         baseX: Float, baseY: Float,
@@ -355,21 +296,31 @@ class TouchAccessibilityService : AccessibilityService() {
         pressure: Float,
         isBrake: Boolean = false
     ) {
-        val finger: Finger
-        if (isBrake) {
-            brkBX=baseX; brkBY=baseY; brkTrav=travelDistance
-            finger = bf
-            if (pressure > 0.12f) { brkTarget=pressure; finger.isActive=true }
-            else if (finger.isActive) { finger.isActive=false; finger.releaseOnce=true; brkTarget=0f }
-            else return
+        val ch = if (isBrake) brkChannel else gasChannel
+        if (pressure > 0.12f) {
+            ch.press(baseX, baseY)
         } else {
-            gasBX=baseX; gasBY=baseY; gasTrav=travelDistance
-            finger = gf
-            if (pressure > 0.12f) { gasTarget=pressure; finger.isActive=true }
-            else if (finger.isActive) { finger.isActive=false; finger.releaseOnce=true; gasTarget=0f }
-            else return
+            ch.release()
         }
-        scheduleDispatch()
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // INTERNAL: ARC PATH SETIR
+    // ─────────────────────────────────────────────────────────────
+
+    /** Hitung busur setir dari fromNorm ke toNorm (8 titik interpolasi). */
+    private fun buildSteerArc(fromNorm: Float, toNorm: Float): Path {
+        val maxAngle = (steerMaxDeg / 2f) * steerSens
+        val fromRad  = Math.toRadians(((fromNorm * maxAngle) - 90.0)).toFloat()
+        val toRad    = Math.toRadians(((toNorm   * maxAngle) - 90.0)).toFloat()
+        return Path().apply {
+            moveTo(steerCX + steerR * cos(fromRad), steerCY + steerR * sin(fromRad))
+            repeat(8) { i ->
+                val t   = (i + 1) / 8f
+                val rad = fromRad + (toRad - fromRad) * t
+                lineTo(steerCX + steerR * cos(rad), steerCY + steerR * sin(rad))
+            }
+        }
     }
 
     // ─────────────────────────────────────────────────────────────
